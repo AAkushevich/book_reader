@@ -8,18 +8,15 @@ import 'package:book_reader_app/features/library/data/datasources/sembast_storag
 
 part 'book_library_provider.g.dart';
 
-// Провайдер хранилища. Инициализацию БД (.init()) необходимо вызвать в main() до первого доступа
 @riverpod
 SembastBookStorage sembastStorage(Ref ref) => SembastBookStorage();
 
-// Провайдер репозитория (автоматически внедряет зависимости)
 @riverpod
 BookLibraryRepository bookLibraryRepository(Ref ref) {
   final storage = ref.watch(sembastStorageProvider);
   return BookLibraryRepositoryImpl(storage);
 }
 
-// Асинхронный нотификер состояния библиотеки
 @riverpod
 class BookLibraryNotifier extends _$BookLibraryNotifier {
   late final BookLibraryRepository _repo;
@@ -30,25 +27,22 @@ class BookLibraryNotifier extends _$BookLibraryNotifier {
     return _repo.getAllBooks();
   }
 
-  /// Выбрать файл через системный диалог и добавить в библиотеку
   Future<void> pickAndAddBook() async {
     state = const AsyncLoading();
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['fb2', 'epub'],
+        allowedExtensions: ['fb2', 'zip', 'epub'], // ✅ Добавлен zip
         dialogTitle: 'Выберите книгу',
       );
 
       if (result == null || result.files.single.path == null) {
-        // Пользователь отменил выбор → возвращаем текущее состояние
         state = AsyncValue.data(await _repo.getAllBooks());
         return;
       }
 
       await _repo.addBookFromPath(result.files.single.path!);
-      final updated = await _repo.getAllBooks();
-      state = AsyncValue.data(updated);
+      state = AsyncValue.data(await _repo.getAllBooks());
     } on AppException catch (e, st) {
       state = AsyncValue.error(e, st);
     } catch (e, st) {
@@ -56,13 +50,11 @@ class BookLibraryNotifier extends _$BookLibraryNotifier {
     }
   }
 
-  /// Удалить книгу из списка (файл на диске остаётся)
   Future<void> removeBook(String filePath) async {
     await _repo.removeBook(filePath);
     state = AsyncValue.data(await _repo.getAllBooks());
   }
 
-  /// Очистить всю библиотеку
   Future<void> clearLibrary() async {
     await _repo.clearLibrary();
     state = const AsyncValue.data([]);

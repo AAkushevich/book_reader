@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'package:book_reader_app/features/library/presentation/pages/book_library_page.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -7,11 +7,13 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Book Finder',
+      title: 'Book Reader',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        useMaterial3: true,
+        colorSchemeSeed: Colors.blue,
       ),
-      home: Container(),
+      home: const BookLibraryPage(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
