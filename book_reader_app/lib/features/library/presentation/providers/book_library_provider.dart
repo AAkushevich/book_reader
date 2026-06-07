@@ -1,20 +1,16 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:book_reader_app/core/exceptions.dart';
 import 'package:book_reader_app/features/library/domain/entities/book_entry.dart';
 import 'package:book_reader_app/features/library/domain/repositories/book_library_repository.dart';
-import 'package:book_reader_app/features/library/data/repositories/book_library_repository_impl.dart';
-import 'package:book_reader_app/features/library/data/datasources/sembast_storage.dart';
+import 'package:book_reader_app/features/library/data/repositories/book_repository_impl.dart';
+import 'package:book_reader_app/features/reader/presentation/providers/reader_provider.dart';
 
 part 'book_library_provider.g.dart';
 
 @riverpod
-SembastBookStorage sembastStorage(Ref ref) => SembastBookStorage();
-
-@riverpod
 BookLibraryRepository bookLibraryRepository(Ref ref) {
-  final storage = ref.watch(sembastStorageProvider);
-  return BookLibraryRepositoryImpl(storage);
+  final db = ref.watch(appDatabaseProvider);
+  return BookLibraryRepositoryImpl(db);
 }
 
 @riverpod
@@ -27,28 +23,21 @@ class BookLibraryNotifier extends _$BookLibraryNotifier {
     return _repo.getAllBooks();
   }
 
-  Future<void> pickAndAddBook() async {
-    state = const AsyncLoading();
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['fb2', 'zip', 'epub'], // ✅ Добавлен zip
-        dialogTitle: 'Выберите книгу',
-      );
-
-      if (result == null || result.files.single.path == null) {
-        state = AsyncValue.data(await _repo.getAllBooks());
-        return;
-      }
-
-      await _repo.addBookFromPath(result.files.single.path!);
-      state = AsyncValue.data(await _repo.getAllBooks());
-    } on AppException catch (e, st) {
-      state = AsyncValue.error(e, st);
-    } catch (e, st) {
-      state = AsyncValue.error(ParseError(e.toString()), st);
+Future<void> pickAndAddBook() async {
+  state = await AsyncValue.guard(() async {
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['fb2', 'zip', 'epub'],
+      dialogTitle: 'Выберите книгу',
+    );
+    if (result == null || result.files.single.path == null) {
+      return await _repo.getAllBooks(); 
     }
-  }
+    await _repo.addBookFromPath(result.files.single.path!);
+  
+    return await _repo.getAllBooks();
+  });
+}
 
   Future<void> removeBook(String filePath) async {
     await _repo.removeBook(filePath);

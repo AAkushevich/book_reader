@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/core/exceptions.dart';
 import 'package:book_reader_app/features/library/domain/entities/book_entry.dart';
 import 'package:book_reader_app/features/library/presentation/providers/book_library_provider.dart';
+import 'package:book_reader_app/features/reader/presentation/pages/reader_screen.dart';
 
 class BookLibraryPage extends ConsumerWidget {
   const BookLibraryPage({super.key});
@@ -146,14 +147,18 @@ class _BookTile extends ConsumerWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: ListTile(
-        leading: _BookCover(book: book), // ✅ Виджет обложки
+        leading: _BookCover(book: book), 
         title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: isWide
             ? Row(children: [Expanded(child: Text(book.author, overflow: TextOverflow.ellipsis)), Text('${book.formattedSize} • .${book.extension}', style: Theme.of(context).textTheme.labelSmall)])
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(book.author, overflow: TextOverflow.ellipsis), Text('${book.formattedSize} • .${book.extension}', style: Theme.of(context).textTheme.labelSmall)]),
-        // ❌ Убран trailing: IconButton
-        onLongPress: () => _showDeleteDialog(context, ref), // ✅ Удаление по удержанию
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Открытие: ${book.title} (в разработке)'))),
+        onLongPress: () => _showDeleteDialog(context, ref),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ReaderScreen(filePath: book.filePath),
+          ),
+        ),
       ),
     );
   }
@@ -179,7 +184,6 @@ class _BookTile extends ConsumerWidget {
   }
 }
 
-// ✅ Новый виджет для обложки с фолбэком
 class _BookCover extends StatelessWidget {
   final BookEntry book;
   const _BookCover({required this.book});
@@ -207,7 +211,7 @@ class _Placeholder extends StatelessWidget {
       width: 48,
       height: 64,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.5),
+        color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Icon(Icons.book, color: Theme.of(context).colorScheme.primary),

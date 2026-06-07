@@ -1,8 +1,8 @@
 import 'package:equatable/equatable.dart';
 
-/// Сессия чтения: хранит прогресс и настройки для конкретной книги.
-/// Не зависит от UI, БД, парсинга или Flutter.
-class ReadingSession extends Equatable {
+/// Сущность, хранящая прогресс и настройки чтения для конкретной книги.
+/// Не зависит от UI, БД или Flutter.
+class ReadingProgress extends Equatable {
   final String bookId;           // Ссылка на книгу (путь к файлу)
   final int currentPageIndex;    // Текущая страница (0-based)
   final double fontSize;         // Размер шрифта
@@ -10,7 +10,7 @@ class ReadingSession extends Equatable {
   final bool isDarkMode;         // Тема
   final DateTime lastReadAt;     // Время последнего открытия
 
-  const ReadingSession({
+  const ReadingProgress({
     required this.bookId,
     this.currentPageIndex = 0,
     this.fontSize = 16.0,
@@ -19,33 +19,33 @@ class ReadingSession extends Equatable {
     required this.lastReadAt,
   });
 
-  /// Создать сессию с настройками по умолчанию для новой книги
-  factory ReadingSession.initial(String bookId) => ReadingSession(
+  /// Создать прогресс с настройками по умолчанию для новой книги
+  factory ReadingProgress.initial(String bookId) => ReadingProgress(
     bookId: bookId,
     lastReadAt: DateTime.now(),
   );
 
   /// Обновить позицию чтения
-  ReadingSession updateProgress(int pageIndex) => copyWith(
+  ReadingProgress updatePage(int pageIndex) => copyWith(
     currentPageIndex: pageIndex,
     lastReadAt: DateTime.now(),
   );
 
   /// Обновить настройки отображения
-  ReadingSession updateSettings({double? fontSize, String? fontFamily, bool? isDarkMode}) => copyWith(
+  ReadingProgress updateSettings({double? fontSize, String? fontFamily, bool? isDarkMode}) => copyWith(
     fontSize: fontSize,
     fontFamily: fontFamily,
     isDarkMode: isDarkMode,
   );
 
-  ReadingSession copyWith({
+  ReadingProgress copyWith({
     int? currentPageIndex,
     double? fontSize,
     String? fontFamily,
     bool? isDarkMode,
     DateTime? lastReadAt,
   }) {
-    return ReadingSession(
+    return ReadingProgress(
       bookId: bookId,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       fontSize: fontSize ?? this.fontSize,

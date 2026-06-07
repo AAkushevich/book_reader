@@ -7,7 +7,7 @@ class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Book Reader',
+      title: 'Library',
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: Colors.blue,

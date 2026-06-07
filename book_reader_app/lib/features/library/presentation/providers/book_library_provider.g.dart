@@ -9,53 +9,6 @@ part of 'book_library_provider.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 
-@ProviderFor(sembastStorage)
-const sembastStorageProvider = SembastStorageProvider._();
-
-final class SembastStorageProvider
-    extends
-        $FunctionalProvider<
-          SembastBookStorage,
-          SembastBookStorage,
-          SembastBookStorage
-        >
-    with $Provider<SembastBookStorage> {
-  const SembastStorageProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'sembastStorageProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$sembastStorageHash();
-
-  @$internal
-  @override
-  $ProviderElement<SembastBookStorage> $createElement(
-    $ProviderPointer pointer,
-  ) => $ProviderElement(pointer);
-
-  @override
-  SembastBookStorage create(Ref ref) {
-    return sembastStorage(ref);
-  }
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(SembastBookStorage value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<SembastBookStorage>(value),
-    );
-  }
-}
-
-String _$sembastStorageHash() => r'50cf540c73b521d9bef8638fb81d46b4ccb53b61';
-
 @ProviderFor(bookLibraryRepository)
 const bookLibraryRepositoryProvider = BookLibraryRepositoryProvider._();
 
@@ -102,7 +55,7 @@ final class BookLibraryRepositoryProvider
 }
 
 String _$bookLibraryRepositoryHash() =>
-    r'ec461b8b8703d236896aca1d11915f98a52c84f3';
+    r'f0286f85de94a85daffa9f50b7c2aa14de558071';
 
 @ProviderFor(BookLibraryNotifier)
 const bookLibraryProvider = BookLibraryNotifierProvider._();
