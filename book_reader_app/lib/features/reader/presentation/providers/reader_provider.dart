@@ -1,5 +1,5 @@
 import 'package:book_reader_app/core/database/app_database.dart';
-import 'package:book_reader_app/features/reader/data/parsers/ook_text_extractor.dart';
+import 'package:book_reader_app/features/reader/data/parsers/book_text_extractor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
@@ -7,8 +7,6 @@ import 'package:book_reader_app/features/reader/domain/repositories/reader_repos
 import 'package:book_reader_app/features/reader/data/repositories/reader_repository_impl.dart';
 import 'package:book_reader_app/features/reader/data/parsers/text_paginator.dart';
 
-
-// === DI Контейнер ===
 final appDatabaseProvider = Provider<AppDatabase>((ref) => throw UnimplementedError());
 
 final readerRepositoryProvider = Provider<ReaderRepository>(
@@ -19,7 +17,6 @@ final bookTextExtractorProvider = Provider<BookTextExtractor>(
   (ref) => BookTextExtractor(),
 );
 
-// === Состояние ===
 class ReaderState {
   final String rawText;
   final List<String> pages;
@@ -52,7 +49,6 @@ class ReaderState {
   }
 }
 
-// === Провайдер ===
 final readerProvider = AsyncNotifierProvider<ReaderNotifier, ReaderState>(
   ReaderNotifier.new,
 );
@@ -68,11 +64,10 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     return const ReaderState();
   }
 
-  /// Точка входа: открытие книги
+
   Future<void> openBook(String filePath, Size screenSize) async {
-    state = const AsyncValue.loading();
-    
-    try {
+
+    state = await AsyncValue.guard(() async {
       final existingProgress = await _repo.loadProgress(filePath);
       final progress = existingProgress ?? ReadingProgress.initial(filePath);
       
@@ -82,14 +77,11 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
         throw FormatException('Файл не содержит читаемого текста');
       }
 
-      await _recalculatePages(rawText, progress, screenSize);
-    } catch (e, st) {
-      state = AsyncValue.error(e, st);
-    }
+      return await _recalculatePages(rawText, progress, screenSize);
+    });
   }
 
-  /// Внутренний метод: пагинация
-  Future<void> _recalculatePages(String text, ReadingProgress progress, Size screenSize) async {
+  Future<ReaderState> _recalculatePages(String text, ReadingProgress progress, Size screenSize) async {
     final config = PaginatorConfig(
       text: text,
       fontSize: progress.fontSize,
@@ -102,13 +94,13 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     final pages = await paginateText(config);
     final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
 
-    state = AsyncValue.data(ReaderState(
+    return ReaderState(
       rawText: text,
       pages: pages,
       currentPageIndex: safeIndex,
       progress: progress,
       isReady: true,
-    ));
+    );
   }
 
   Future<void> goToPage(int index) async {
@@ -121,13 +113,14 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
 
   Future<void> changeFontSize(double newFontSize, Size screenSize) async {
     final current = state.value;
-    if (current == null || current.pages.isEmpty) return;
+    if (current == null) return;
 
-    final updatedProgress = current.progress!.updateSettings(fontSize: newFontSize);
-    await _repo.saveProgress(updatedProgress);
-    
-    state = const AsyncValue.loading();
-    await _recalculatePages(current.rawText, updatedProgress, screenSize);
+    state = await AsyncValue.guard(() async {
+      final updatedProgress = current.progress!.updateSettings(fontSize: newFontSize);
+      await _repo.saveProgress(updatedProgress);
+      
+      return await _recalculatePages(current.rawText, updatedProgress, screenSize);
+    });
   }
 
   Future<void> toggleTheme() async {
@@ -136,6 +129,7 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
 
     final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
     await _repo.saveProgress(updatedProgress);
+
     state = AsyncValue.data(current.copyWith(progress: updatedProgress));
   }
 }
