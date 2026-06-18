@@ -37,35 +37,42 @@ class ReaderRepositoryImpl implements ReaderRepository {
     double? fontSize,
     String? fontFamily,
     bool? isDarkMode,
+    double? lineHeight,
+    double? paragraphSpacing,
   }) async {
     final existing = await loadProgress(bookId);
     final updated = (existing ?? ReadingProgress.initial(bookId)).updateSettings(
       fontSize: fontSize,
       fontFamily: fontFamily,
       isDarkMode: isDarkMode,
+      lineHeight: lineHeight,
+      paragraphSpacing: paragraphSpacing,
     );
     await saveProgress(updated);
   }
 
   // === Сериализация (внутренняя логика преобразования) ===
 
-  Map<String, dynamic> _toJson(ReadingProgress p) => {
-    'bookId': p.bookId,
-    'currentPageIndex': p.currentPageIndex,
-    'fontSize': p.fontSize,
-    'fontFamily': p.fontFamily,
-    'isDarkMode': p.isDarkMode,
-    'lastReadAtMs': p.lastReadAt.millisecondsSinceEpoch,
+  Map<String, dynamic> _toJson(ReadingProgress s) => {
+    'bookId': s.bookId,
+    'currentPageIndex': s.currentPageIndex,
+    'fontSize': s.fontSize,
+    'fontFamily': s.fontFamily,
+    'isDarkMode': s.isDarkMode,
+    'lineHeight': s.lineHeight,
+    'paragraphSpacing': s.paragraphSpacing,
+    'lastReadAtMs': s.lastReadAt?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
   };
-
   ReadingProgress _fromJson(Map<String, dynamic> json) => ReadingProgress(
     bookId: json['bookId'] as String,
     currentPageIndex: json['currentPageIndex'] as int? ?? 0,
     fontSize: (json['fontSize'] as num?)?.toDouble() ?? 16.0,
-    fontFamily: json['fontFamily'] as String? ?? 'sans-serif',
+    fontFamily: json['fontFamily'] as String? ?? 'PTSerif',
     isDarkMode: json['isDarkMode'] as bool? ?? false,
-    lastReadAt: DateTime.fromMillisecondsSinceEpoch(
-      json['lastReadAtMs'] as int? ?? DateTime.now().millisecondsSinceEpoch,
-    ),
+    lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
+    paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 0.75,
+    lastReadAt: json['lastReadAtMs'] != null
+        ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
+        : null, 
   );
 }

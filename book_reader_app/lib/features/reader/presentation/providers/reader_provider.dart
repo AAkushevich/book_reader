@@ -1,11 +1,14 @@
 import 'package:book_reader_app/core/database/app_database.dart';
 import 'package:book_reader_app/features/reader/data/parsers/book_text_extractor.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
+import 'package:book_reader_app/features/reader/domain/entities/text_line.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
 import 'package:book_reader_app/features/reader/domain/repositories/reader_repository.dart';
 import 'package:book_reader_app/features/reader/data/repositories/reader_repository_impl.dart';
 import 'package:book_reader_app/features/reader/data/parsers/text_paginator.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_content.dart'; 
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) => throw UnimplementedError());
 
@@ -18,33 +21,53 @@ final bookTextExtractorProvider = Provider<BookTextExtractor>(
 );
 
 class ReaderState {
-  final String rawText;
-  final List<String> pages;
+  final List<BookBlock> blocks;
+  final List<List<TextLine>> pages;
   final int currentPageIndex;
   final ReadingProgress? progress;
-  final bool isReady; 
+  final bool isReady;
+  final bool showProgressAsPercent;
+  final String bookTitle;
+  final String bookAuthor;
+  final List<Chapter> chapters;
+  final TextScaler textScaler; 
 
   const ReaderState({
-    this.rawText = '',
+    this.blocks = const [], 
     this.pages = const [],
     this.currentPageIndex = 0,
     this.progress,
     this.isReady = false,
+    this.showProgressAsPercent = false,
+    this.bookTitle = 'Неизвестная книга',
+    this.bookAuthor = 'Автор неизвестен',
+    this.chapters = const [],
+    this.textScaler = TextScaler.noScaling,
   });
 
   ReaderState copyWith({
-    String? rawText,
-    List<String>? pages,
+    List<BookBlock>? blocks, 
+    List<List<TextLine>>? pages,
     int? currentPageIndex,
     ReadingProgress? progress,
     bool? isReady,
+    bool? showProgressAsPercent,
+    String? bookTitle,
+    String? bookAuthor,
+    List<Chapter>? chapters,
+    TextScaler? textScaler,
   }) {
     return ReaderState(
-      rawText: rawText ?? this.rawText,
+      blocks: blocks ?? this.blocks, 
       pages: pages ?? this.pages,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       progress: progress ?? this.progress,
       isReady: isReady ?? this.isReady,
+      showProgressAsPercent: showProgressAsPercent ?? this.showProgressAsPercent,
+      bookTitle: bookTitle ?? this.bookTitle,
+      bookAuthor: bookAuthor ?? this.bookAuthor,
+      chapters: chapters ?? this.chapters,
+      textScaler: textScaler ?? this.textScaler,
     );
   }
 }
@@ -64,49 +87,76 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     return const ReaderState();
   }
 
-
-  Future<void> openBook(String filePath, Size screenSize) async {
+  Future<void> openBook(
+    String filePath, 
+    String bookTitle, 
+    String bookAuthor, 
+    Size screenSize,
+    TextScaler textScaler, 
+  ) async {
+    String finalTitle = bookTitle.isNotEmpty ? bookTitle : filePath.split('/').last.split('.').first;
+    String finalAuthor = bookAuthor.isNotEmpty ? bookAuthor : 'Автор неизвестен';
 
     state = await AsyncValue.guard(() async {
       final existingProgress = await _repo.loadProgress(filePath);
       final progress = existingProgress ?? ReadingProgress.initial(filePath);
       
-      final rawText = await _extractor.extract(progress.bookId);
-      
-      if (rawText.trim().isEmpty) {
+      final bookContent = await _extractor.extract(progress.bookId);
+      if (bookContent.blocks.isEmpty) {
         throw FormatException('Файл не содержит читаемого текста');
       }
 
-      return await _recalculatePages(rawText, progress, screenSize);
+      final resultState = await _recalculatePages(
+        bookContent.blocks, 
+        progress, 
+        screenSize, 
+        textScaler,
+      );
+      
+      return resultState.copyWith(
+        bookTitle: finalTitle,
+        bookAuthor: finalAuthor,
+        chapters: bookContent.chapters,
+        textScaler: textScaler,
+      );
     });
   }
 
-  Future<ReaderState> _recalculatePages(String text, ReadingProgress progress, Size screenSize) async {
+  Future<ReaderState> _recalculatePages(
+    List<BookBlock> blocks, 
+    ReadingProgress progress, 
+    Size screenSize,
+    TextScaler textScaler,
+  ) async {
     final config = PaginatorConfig(
-      text: text,
       fontSize: progress.fontSize,
       fontFamily: progress.fontFamily,
-      lineHeight: 1.5,
-      maxWidth: screenSize.width - 32.0,
-      maxHeight: screenSize.height - 140.0,
+      lineHeight: progress.lineHeight,
+      maxWidth: screenSize.width - 40.0,
+      maxHeight: screenSize.height - 96.0,
+      textScaler: textScaler,
     );
 
-    final pages = await paginateText(config);
+    final pages = await paginateBook(blocks, config);
     final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
 
+    print('📊 Блоков: ${blocks.length} | 📄 Страниц: ${pages.length}');
+    print('📐 Screen: ${screenSize.width}x${screenSize.height}');
+    print('📐 MaxHeight: ${config.maxHeight}');
+
     return ReaderState(
-      rawText: text,
+      blocks: blocks,
       pages: pages,
       currentPageIndex: safeIndex,
       progress: progress,
       isReady: true,
+      textScaler: textScaler,
     );
   }
 
   Future<void> goToPage(int index) async {
     final current = state.value;
     if (current == null || index < 0 || index >= current.pages.length) return;
-
     await _repo.updatePage(current.progress!.bookId, index);
     state = AsyncValue.data(current.copyWith(currentPageIndex: index));
   }
@@ -114,22 +164,61 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
   Future<void> changeFontSize(double newFontSize, Size screenSize) async {
     final current = state.value;
     if (current == null) return;
-
     state = await AsyncValue.guard(() async {
       final updatedProgress = current.progress!.updateSettings(fontSize: newFontSize);
       await _repo.saveProgress(updatedProgress);
-      
-      return await _recalculatePages(current.rawText, updatedProgress, screenSize);
+      return await _recalculatePages(
+        current.blocks, 
+        updatedProgress, 
+        screenSize, 
+        current.textScaler,
+      );
+    });
+  }
+
+  Future<void> changeLineHeight(double newLineHeight, Size screenSize) async {
+    final current = state.value;
+    if (current == null) return;
+    state = await AsyncValue.guard(() async {
+      final updatedProgress = current.progress!.updateSettings(lineHeight: newLineHeight);
+      await _repo.saveProgress(updatedProgress);
+      return await _recalculatePages(
+        current.blocks, 
+        updatedProgress, 
+        screenSize, 
+        current.textScaler,
+      );
+    });
+  }
+
+  Future<void> changeParagraphSpacing(double newSpacing, Size screenSize) async {
+    final current = state.value;
+    if (current == null) return;
+    state = await AsyncValue.guard(() async {
+      final updatedProgress = current.progress!.updateSettings(paragraphSpacing: newSpacing);
+      await _repo.saveProgress(updatedProgress);
+      return await _recalculatePages(
+        current.blocks, 
+        updatedProgress, 
+        screenSize, 
+        current.textScaler,
+      );
     });
   }
 
   Future<void> toggleTheme() async {
     final current = state.value;
     if (current == null) return;
-
     final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
     await _repo.saveProgress(updatedProgress);
-
     state = AsyncValue.data(current.copyWith(progress: updatedProgress));
+  }
+
+  void toggleProgressFormat() {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncValue.data(current.copyWith(
+      showProgressAsPercent: !current.showProgressAsPercent,
+    ));
   }
 }

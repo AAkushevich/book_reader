@@ -1,62 +1,73 @@
-import 'package:equatable/equatable.dart';
-
-/// Сущность, хранящая прогресс и настройки чтения для конкретной книги.
-/// Не зависит от UI, БД или Flutter.
-class ReadingProgress extends Equatable {
-  final String bookId;           // Ссылка на книгу (путь к файлу)
-  final int currentPageIndex;    // Текущая страница (0-based)
-  final double fontSize;         // Размер шрифта
-  final String fontFamily;       // Семейство шрифта
-  final bool isDarkMode;         // Тема
-  final DateTime lastReadAt;     // Время последнего открытия
+class ReadingProgress {
+  final String bookId;
+  final int currentPageIndex;
+  final double fontSize;
+  final String fontFamily;
+  final bool isDarkMode;
+  final double lineHeight;
+  final double paragraphSpacing;
+  final DateTime? lastReadAt;
 
   const ReadingProgress({
     required this.bookId,
     this.currentPageIndex = 0,
     this.fontSize = 16.0,
-    this.fontFamily = 'sans-serif',
+    this.fontFamily = 'PTSerif',
     this.isDarkMode = false,
-    required this.lastReadAt,
+    this.lineHeight = 1.5,
+    this.paragraphSpacing = 0.75,
+    this.lastReadAt,
   });
 
-  /// Создать прогресс с настройками по умолчанию для новой книги
-  factory ReadingProgress.initial(String bookId) => ReadingProgress(
-    bookId: bookId,
-    lastReadAt: DateTime.now(),
-  );
-
-  /// Обновить позицию чтения
-  ReadingProgress updatePage(int pageIndex) => copyWith(
-    currentPageIndex: pageIndex,
-    lastReadAt: DateTime.now(),
-  );
-
-  /// Обновить настройки отображения
-  ReadingProgress updateSettings({double? fontSize, String? fontFamily, bool? isDarkMode}) => copyWith(
-    fontSize: fontSize,
-    fontFamily: fontFamily,
-    isDarkMode: isDarkMode,
-  );
+  factory ReadingProgress.initial(String bookId) {
+    return ReadingProgress(
+      bookId: bookId,
+      lastReadAt: DateTime.now(),
+    );
+  }
 
   ReadingProgress copyWith({
+    String? bookId,
     int? currentPageIndex,
     double? fontSize,
     String? fontFamily,
     bool? isDarkMode,
+    double? lineHeight,
+    double? paragraphSpacing,
     DateTime? lastReadAt,
   }) {
     return ReadingProgress(
-      bookId: bookId,
+      bookId: bookId ?? this.bookId,
       currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       fontSize: fontSize ?? this.fontSize,
       fontFamily: fontFamily ?? this.fontFamily,
       isDarkMode: isDarkMode ?? this.isDarkMode,
+      lineHeight: lineHeight ?? this.lineHeight,
+      paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
       lastReadAt: lastReadAt ?? this.lastReadAt,
     );
   }
 
-  @override
-  List<Object?> get props => [
-    bookId, currentPageIndex, fontSize, fontFamily, isDarkMode, lastReadAt,
-  ];
+  ReadingProgress updateSettings({
+    double? fontSize,
+    String? fontFamily,
+    bool? isDarkMode,
+    double? lineHeight,
+    double? paragraphSpacing,
+  }) {
+    return copyWith(
+      fontSize: fontSize,
+      fontFamily: fontFamily,
+      isDarkMode: isDarkMode,
+      lineHeight: lineHeight,
+      paragraphSpacing: paragraphSpacing,
+    );
+  }
+
+  ReadingProgress updatePage(int newPageIndex) {
+    return copyWith(
+      currentPageIndex: newPageIndex,
+      lastReadAt: DateTime.now(),
+    );
+  }
 }

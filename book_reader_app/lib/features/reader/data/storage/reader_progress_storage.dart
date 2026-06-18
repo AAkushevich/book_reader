@@ -33,24 +33,28 @@ class ReaderProgressStorage {
     await _store.record(bookId).delete(_db);
   }
 
-  // === Ручная сериализация (совместима с архитетурой без генераторов) ===
+  // === Ручная сериализация (совместима с архитектурой без генераторов) ===
   Map<String, dynamic> _toJson(ReadingProgress s) => {
     'bookId': s.bookId,
     'currentPageIndex': s.currentPageIndex,
     'fontSize': s.fontSize,
     'fontFamily': s.fontFamily,
     'isDarkMode': s.isDarkMode,
-    'lastReadAtMs': s.lastReadAt.millisecondsSinceEpoch,
+    'lineHeight': s.lineHeight,
+    'paragraphSpacing': s.paragraphSpacing,
+    'lastReadAtMs': s.lastReadAt?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch, 
   };
 
   ReadingProgress _fromJson(Map<String, dynamic> json) => ReadingProgress(
     bookId: json['bookId'] as String,
     currentPageIndex: json['currentPageIndex'] as int? ?? 0,
     fontSize: (json['fontSize'] as num?)?.toDouble() ?? 16.0,
-    fontFamily: json['fontFamily'] as String? ?? 'sans-serif',
+    fontFamily: json['fontFamily'] as String? ?? 'PTSerif',
     isDarkMode: json['isDarkMode'] as bool? ?? false,
-    lastReadAt: DateTime.fromMillisecondsSinceEpoch(
-      json['lastReadAtMs'] as int? ?? DateTime.now().millisecondsSinceEpoch,
-    ),
+    lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
+    paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 0.75,
+    lastReadAt: json['lastReadAtMs'] != null
+        ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
+        : null, 
   );
 }

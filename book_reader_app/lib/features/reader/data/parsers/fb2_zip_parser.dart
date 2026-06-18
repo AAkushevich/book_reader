@@ -4,10 +4,11 @@ import 'package:archive/archive.dart';
 import 'package:collection/collection.dart';
 import 'package:book_reader_app/features/reader/data/parsers/book_parser.dart';
 import 'package:book_reader_app/features/reader/data/parsers/fb2_xml_parser.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
 
 class Fb2ZipParser implements BookParser {
   @override
-  Future<String> parseBytes(Uint8List bytes) async {
+  Future<BookContent> parseBytes(Uint8List bytes) async {
     final archive = ZipDecoder().decodeBytes(bytes);
     
     final fb2File = archive.firstWhereOrNull(

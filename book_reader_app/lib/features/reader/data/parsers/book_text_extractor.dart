@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
 import 'package:path/path.dart' as p;
 import 'package:book_reader_app/core/exceptions.dart';
 import 'package:book_reader_app/features/reader/data/parsers/book_parser.dart';
@@ -19,22 +20,15 @@ class BookTextExtractor {
   };
 
   /// Извлекает текст из файла по указанному пути.
-  Future<String> extract(String filePath) async {
-    // 1. Получаем расширение
+  Future<BookContent> extract(String filePath) async {
     final ext = p.extension(filePath).toLowerCase().replaceFirst('.', '');
-    
-    // 2. Находим парсер
     final parser = _parsers[ext];
     
-    // 3. Валидация
     if (parser == null) {
       throw UnsupportedFileFormat(ext);
     }
     
-    // 4. Чтение байтов (I/O)
     final Uint8List bytes = await File(filePath).readAsBytes();
-    
-    // 5. Делегирование парсинга (Бизнес-логика)
     return await parser.parseBytes(bytes);
   }
 }

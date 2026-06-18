@@ -154,11 +154,15 @@ class _BookTile extends ConsumerWidget {
             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(book.author, overflow: TextOverflow.ellipsis), Text('${book.formattedSize} • .${book.extension}', style: Theme.of(context).textTheme.labelSmall)]),
         onLongPress: () => _showDeleteDialog(context, ref),
         onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ReaderScreen(filePath: book.filePath),
-          ),
-        ),
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReaderScreen(
+                          filePath: book.filePath,
+                          bookTitle: book.title,      
+                          bookAuthor: book.author,    
+                        ),
+                      ),
+                    ),
       ),
     );
   }

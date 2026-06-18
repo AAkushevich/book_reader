@@ -64,14 +64,14 @@ BookMetadata _parseFb2Content(String content) {
       ? '${authorEl.findAllElements('first-name').firstOrNull?.innerText ?? ''} ${authorEl.findAllElements('last-name').firstOrNull?.innerText ?? ''}'.trim()
       : '';
 
-  // ✅ Извлечение обложки для FB2 (безопасный поиск)
+  // Извлечение обложки для FB2 (безопасный поиск)
   Uint8List? coverImage;
   final coverPage = doc.findAllElements('coverpage').firstOrNull;
   final coverHref = coverPage?.findAllElements('image').firstOrNull?.getAttribute('href');
   
   if (coverHref != null) {
     final imageId = coverHref.replaceFirst('#', '');
-    // ✅ Безопасный поиск вместо firstWhere + orElse: () => null
+    //  Безопасный поиск вместо firstWhere + orElse: () => null
     final binary = doc.findAllElements('binary').firstWhereOrNull((el) => el.getAttribute('id') == imageId);
     
     if (binary != null) {
@@ -136,10 +136,9 @@ BookMetadata _parseEpub(String path) {
     }
   }
 
-  // ✅ Извлечение обложки по найденному пути
+  // Извлечение обложки по найденному пути
 if (coverPath != null) {
   final coverFile = archive.firstWhereOrNull(
-    // ✅ Добавлена проверка: используем ! только после гарантии, что coverPath != null
     (f) => f.name.endsWith(coverPath!) || f.name.contains('/$coverPath'),
   );
   if (coverFile != null && coverFile.content != null) {

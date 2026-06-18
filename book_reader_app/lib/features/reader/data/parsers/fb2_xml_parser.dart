@@ -1,40 +1,69 @@
 import 'package:xml/xml.dart';
+import 'package:collection/collection.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
 
 class Fb2XmlParser {
-  
-  /// Парсит FB2 XML-контент и извлекает из него текст с сохранением абзацев.
-  static String parse(String xmlContent) {
+  static BookContent parse(String xmlContent) {
     final doc = XmlDocument.parse(xmlContent);
-    
-    // Ищем первый тег <body>
     final body = doc.findAllElements('body').firstOrNull;
-    if (body == null) return '';
+    if (body == null) return BookContent(blocks: []);
 
-    final buffer = StringBuffer();
-    _walkFb2Node(body, buffer);
+    final blocks = <BookBlock>[];
+    final chapters = <Chapter>[];
     
-    // Убираем лишние пустые строки, оставляем максимум 1 (двойной перенос)
-    return buffer.toString().replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+    // Начинаем обход с корневых секций
+    for (final section in body.findAllElements('section')) {
+      _processSection(section, blocks, chapters);
+    }
+
+    return BookContent(blocks: blocks, chapters: chapters);
   }
 
-  /// Рекурсивный обход узлов XML для извлечения текста.
-  static void _walkFb2Node(XmlNode node, StringBuffer buffer) {
-    for (final child in node.children) {
+  static void _processSection(XmlElement section, List<BookBlock> blocks, List<Chapter> chapters) {
+    for (final child in section.children) {
       if (child is XmlElement) {
-        // Обработка параграфа
-        if (child.name.local == 'p') {
-          buffer.writeln(child.innerText);
-        } 
-        // Обработка пустой строки в FB2
-        else if (child.name.local == 'empty-line') {
-          buffer.writeln();
-        } 
-        else {
-          _walkFb2Node(child, buffer);
+        // 1. ЗАГОЛОВОК (Название главы, тома)
+        if (child.name.local == 'title') {
+          final titleText = child.innerText.trim();
+          if (titleText.isNotEmpty) {
+            // Добавляем пустую строку перед заголовком для красоты
+            blocks.add(BookBlock.emptyLine());
+            blocks.add(BookBlock.title(titleText));
+            blocks.add(BookBlock.emptyLine());
+            
+            // Запоминаем главу для оглавления
+            chapters.add(Chapter(
+              title: titleText, 
+              startPageIndex: 0, // Заполнится позже
+              blockIndex: blocks.length - 2,
+            ));
+          }
         }
-      } 
-      else if (child is XmlText) {
-        buffer.write(child.value);
+        // 2. ПАРАГРАФ (Обычный текст)
+        else if (child.name.local == 'p') {
+          final text = child.innerText.trim();
+          if (text.isNotEmpty) {
+            blocks.add(BookBlock.paragraph(text));
+          }
+        }
+        // 3. ЭПИГРАФ
+        else if (child.name.local == 'epigraph') {
+          final text = child.innerText.trim();
+          if (text.isNotEmpty) {
+            blocks.add(BookBlock.emptyLine());
+            blocks.add(BookBlock.epigraph(text));
+            blocks.add(BookBlock.emptyLine());
+          }
+        }
+        // 4. ПУСТАЯ СТРОКА
+        else if (child.name.local == 'empty-line') {
+          blocks.add(BookBlock.emptyLine());
+        }
+        // 5. ВЛОЖЕННАЯ СЕКЦИЯ (Глава внутри тома)
+        else if (child.name.local == 'section') {
+          _processSection(child, blocks, chapters);
+        }
       }
     }
   }
