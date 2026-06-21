@@ -18,7 +18,7 @@ class SembastBookStorage {
 
   Future<List<BookEntry>> getAll() async {
     final records = await _store.find(_db, finder: Finder(sortOrders: [
-      // ✅ ascending: false = сортировка по убыванию (новые записи сверху)
+      // ascending: false = сортировка по убыванию (новые записи сверху)
       SortOrder('addedAtMs', false),
     ]));
     return records.map((r) => _fromJson(r.value)).toList();

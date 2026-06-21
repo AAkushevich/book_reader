@@ -1,9 +1,10 @@
+import 'package:book_reader_app/core/theme/app_fonts.dart';
 import 'package:book_reader_app/features/reader/presentation/pages/table_of_contents_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/features/reader/presentation/providers/reader_provider.dart';
 import 'package:book_reader_app/core/theme/reader_themes.dart';
-import 'package:book_reader_app/features/reader/domain/entities/text_line.dart';
+import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String filePath;
@@ -26,22 +27,22 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
   bool _showControls = false;
   int _selectedTab = 1;
 
-@override
-void initState() {
-  WidgetsBinding.instance.addObserver(this);
-  super.initState();
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    final size = MediaQuery.of(context).size;
-    final textScaler = MediaQuery.of(context).textScaler;
-    ref.read(readerProvider.notifier).openBook(
-      widget.filePath,
-      widget.bookTitle,
-      widget.bookAuthor,
-      size,
-      textScaler,
-    );
-  });
-}
+  @override
+  void initState() {
+    WidgetsBinding.instance.addObserver(this);
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final size = MediaQuery.of(context).size;
+      final textScaler = MediaQuery.of(context).textScaler;
+      ref.read(readerProvider.notifier).openBook(
+        widget.filePath,
+        widget.bookTitle,
+        widget.bookAuthor,
+        size,
+        textScaler,
+      );
+    });
+  }
 
   @override
   void dispose() {
@@ -66,8 +67,8 @@ void initState() {
   }
 
   ReaderThemeData _getCurrentTheme(AsyncValue<ReaderState> asyncState) {
-    final isDarkMode = asyncState.value?.progress?.isDarkMode ?? false;
-    return isDarkMode ? ReaderThemeData.nightOled : ReaderThemeData.daySepia;
+    final themeIndex = asyncState.value?.progress?.themeIndex ?? 1;
+    return ReaderThemeData.getByIndex(themeIndex);
   }
 
   @override
@@ -222,7 +223,6 @@ void initState() {
                         );
                       }
 
-                      
                       if (line.isFirstLineOfParagraph) {
                         return Padding(
                           padding: EdgeInsets.only(bottom: fontSize * 0.1),
@@ -452,18 +452,29 @@ void initState() {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => TableOfContentsScreen(
-                        bookTitle: state.bookTitle,
-                        bookAuthor: state.bookAuthor,
-                        chapters: state.chapters,
-                        currentPageIndex: state.currentPageIndex,
-                        onChapterTap: (pageIndex) {
-                          Navigator.pop(context);
-                          _pageController?.jumpToPage(pageIndex);
-                          ref.read(readerProvider.notifier).goToPage(pageIndex);
-                        },
-                      ),
+                    PageRouteBuilder(
+                      opaque: true,
+                      barrierColor: const Color(0xFF1A1A2E),
+                      pageBuilder: (context, animation, secondaryAnimation) {
+                        return TableOfContentsScreen(
+                          bookTitle: state.bookTitle,
+                          bookAuthor: state.bookAuthor,
+                          chapters: state.chapters,
+                          currentPageIndex: state.currentPageIndex,
+                          onChapterTap: (pageIndex) {
+                            Navigator.pop(context);
+                            _pageController?.jumpToPage(pageIndex);
+                            ref.read(readerProvider.notifier).goToPage(pageIndex);
+                          },
+                        );
+                      },
+                      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                        return FadeTransition(
+                          opacity: animation,
+                          child: child,
+                        );
+                      },
+                      transitionDuration: const Duration(milliseconds: 200),
                     ),
                   );
                 },
@@ -528,6 +539,10 @@ void initState() {
   }
 
   Widget _buildSettingsTab(ReaderState state, ReaderThemeData theme) {
+    final currentThemeIndex = state.progress?.themeIndex ?? 1;
+    final currentFontIndex = state.progress?.fontIndex ?? 0;
+    final fontName = ReadingProgress.getFontName(currentFontIndex);
+    
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -536,38 +551,50 @@ void initState() {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildThemeCircle(Colors.white, theme.backgroundColor == Colors.white),
-              _buildThemeCircle(const Color(0xFFF4ECD8), theme.backgroundColor == const Color(0xFFF4ECD8)),
-              _buildThemeCircle(const Color(0xFF2C2C2C), theme.backgroundColor == const Color(0xFF2C2C2C)),
-              _buildThemeCircle(Colors.black, theme.backgroundColor == Colors.black),
+              _buildThemeCircle(Colors.white, currentThemeIndex == 0, 0),
+              _buildThemeCircle(const Color(0xFFF4ECD8), currentThemeIndex == 1, 1),
+              _buildThemeCircle(const Color(0xFF2C2C2C), currentThemeIndex == 2, 2),
+              _buildThemeCircle(Colors.black, currentThemeIndex == 3, 3),
             ],
           ),
           const SizedBox(height: 24),
-          Text(
-            state.progress?.fontFamily.toUpperCase() ?? 'PTSERIF',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w300,
-              letterSpacing: 2,
+          
+          GestureDetector(
+            onTap: () {
+              final nextFontIndex = (currentFontIndex + 1) % 3;
+              ref.read(readerProvider.notifier).changeFont(
+                nextFontIndex,
+                MediaQuery.of(context).size,
+              );
+            },
+            child: Text(
+              fontName.toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w300,
+                letterSpacing: 2,
+              ),
             ),
           ),
           const SizedBox(height: 8),
+          
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(4, (index) {
+            children: List.generate(3, (index) {
               return Container(
                 width: 6,
                 height: 6,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: index == 0 ? const Color(0xFF6C63FF) : Colors.grey,
+                  color: index == currentFontIndex ? const Color(0xFF6C63FF) : Colors.grey,
                 ),
               );
             }),
           ),
           const SizedBox(height: 24),
+          
           Row(
             children: [
               Expanded(
@@ -601,9 +628,14 @@ void initState() {
     );
   }
   
-  Widget _buildThemeCircle(Color color, bool isSelected) {
+  Widget _buildThemeCircle(Color color, bool isSelected, int index) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        ref.read(readerProvider.notifier).changeTheme(
+          index,
+          MediaQuery.of(context).size,
+        );
+      },
       child: Container(
         width: 50,
         height: 50,

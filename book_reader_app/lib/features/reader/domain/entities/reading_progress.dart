@@ -1,4 +1,6 @@
-class ReadingProgress {
+import 'package:equatable/equatable.dart';
+
+class ReadingProgress extends Equatable {
   final String bookId;
   final int currentPageIndex;
   final double fontSize;
@@ -6,6 +8,8 @@ class ReadingProgress {
   final bool isDarkMode;
   final double lineHeight;
   final double paragraphSpacing;
+  final int themeIndex;
+  final int fontIndex; // ✅ 0=PTSerif, 1=SourceSerif4, 2=Comfortaa
   final DateTime? lastReadAt;
 
   const ReadingProgress({
@@ -16,6 +20,8 @@ class ReadingProgress {
     this.isDarkMode = false,
     this.lineHeight = 1.5,
     this.paragraphSpacing = 0.75,
+    this.themeIndex = 1,
+    this.fontIndex = 0,
     this.lastReadAt,
   });
 
@@ -34,6 +40,8 @@ class ReadingProgress {
     bool? isDarkMode,
     double? lineHeight,
     double? paragraphSpacing,
+    int? themeIndex,
+    int? fontIndex,
     DateTime? lastReadAt,
   }) {
     return ReadingProgress(
@@ -44,7 +52,16 @@ class ReadingProgress {
       isDarkMode: isDarkMode ?? this.isDarkMode,
       lineHeight: lineHeight ?? this.lineHeight,
       paragraphSpacing: paragraphSpacing ?? this.paragraphSpacing,
+      themeIndex: themeIndex ?? this.themeIndex,
+      fontIndex: fontIndex ?? this.fontIndex,
       lastReadAt: lastReadAt ?? this.lastReadAt,
+    );
+  }
+
+  ReadingProgress updatePage(int pageIndex) {
+    return copyWith(
+      currentPageIndex: pageIndex,
+      lastReadAt: DateTime.now(),
     );
   }
 
@@ -54,6 +71,8 @@ class ReadingProgress {
     bool? isDarkMode,
     double? lineHeight,
     double? paragraphSpacing,
+    int? themeIndex,
+    int? fontIndex,
   }) {
     return copyWith(
       fontSize: fontSize,
@@ -61,13 +80,36 @@ class ReadingProgress {
       isDarkMode: isDarkMode,
       lineHeight: lineHeight,
       paragraphSpacing: paragraphSpacing,
-    );
-  }
-
-  ReadingProgress updatePage(int newPageIndex) {
-    return copyWith(
-      currentPageIndex: newPageIndex,
+      themeIndex: themeIndex,
+      fontIndex: fontIndex,
       lastReadAt: DateTime.now(),
     );
   }
+
+  static String getFontName(int index) {
+    switch (index) {
+      case 0:
+        return 'PTSerif';
+      case 1:
+        return 'SourceSerif4';
+      case 2:
+        return 'Comfortaa';
+      default:
+        return 'PTSerif';
+    }
+  }
+
+  @override
+  List<Object?> get props => [
+        bookId,
+        currentPageIndex,
+        fontSize,
+        fontFamily,
+        isDarkMode,
+        lineHeight,
+        paragraphSpacing,
+        themeIndex,
+        fontIndex,
+        lastReadAt,
+      ];
 }

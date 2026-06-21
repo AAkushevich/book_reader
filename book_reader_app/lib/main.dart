@@ -5,6 +5,7 @@ import 'package:book_reader_app/core/database/app_database.dart';
 import 'package:book_reader_app/features/reader/presentation/providers/reader_provider.dart';
 
 void main() async {
+  
   WidgetsFlutterBinding.ensureInitialized();
   
   final appDb = AppDatabase();

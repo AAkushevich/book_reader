@@ -3,10 +3,6 @@ import 'package:book_reader_app/core/database/app_database.dart';
 import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
 import 'package:book_reader_app/features/reader/domain/repositories/reader_repository.dart';
 
-/// Реализация контракта читалки.
-/// 
-/// Отвечает ТОЛЬКО за сохранение и извлечение прогресса чтения из БД.
-/// НЕ занимается парсингом файлов — это задача отдельного слоя (parsers).
 class ReaderRepositoryImpl implements ReaderRepository {
   final AppDatabase _db;
 
@@ -39,6 +35,8 @@ class ReaderRepositoryImpl implements ReaderRepository {
     bool? isDarkMode,
     double? lineHeight,
     double? paragraphSpacing,
+    int? themeIndex,
+    int? fontIndex, // ✅ Добавили
   }) async {
     final existing = await loadProgress(bookId);
     final updated = (existing ?? ReadingProgress.initial(bookId)).updateSettings(
@@ -47,11 +45,11 @@ class ReaderRepositoryImpl implements ReaderRepository {
       isDarkMode: isDarkMode,
       lineHeight: lineHeight,
       paragraphSpacing: paragraphSpacing,
+      themeIndex: themeIndex,
+      fontIndex: fontIndex,
     );
     await saveProgress(updated);
   }
-
-  // === Сериализация (внутренняя логика преобразования) ===
 
   Map<String, dynamic> _toJson(ReadingProgress s) => {
     'bookId': s.bookId,
@@ -61,8 +59,11 @@ class ReaderRepositoryImpl implements ReaderRepository {
     'isDarkMode': s.isDarkMode,
     'lineHeight': s.lineHeight,
     'paragraphSpacing': s.paragraphSpacing,
+    'themeIndex': s.themeIndex,
+    'fontIndex': s.fontIndex, // ✅ Сохраняем
     'lastReadAtMs': s.lastReadAt?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch,
   };
+
   ReadingProgress _fromJson(Map<String, dynamic> json) => ReadingProgress(
     bookId: json['bookId'] as String,
     currentPageIndex: json['currentPageIndex'] as int? ?? 0,
@@ -71,8 +72,10 @@ class ReaderRepositoryImpl implements ReaderRepository {
     isDarkMode: json['isDarkMode'] as bool? ?? false,
     lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.5,
     paragraphSpacing: (json['paragraphSpacing'] as num?)?.toDouble() ?? 0.75,
+    themeIndex: json['themeIndex'] as int? ?? 1,
+    fontIndex: json['fontIndex'] as int? ?? 0, // ✅ Загружаем
     lastReadAt: json['lastReadAtMs'] != null
         ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
-        : null, 
+        : null,
   );
 }

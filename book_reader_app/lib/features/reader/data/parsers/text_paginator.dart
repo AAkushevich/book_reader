@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
 import 'package:book_reader_app/features/reader/domain/entities/text_line.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
 
 class PaginatorConfig {
   final double fontSize;
@@ -20,8 +21,19 @@ class PaginatorConfig {
   });
 }
 
-Future<List<List<TextLine>>> paginateBook(
+class PaginationResult {
+  final List<List<TextLine>> pages;
+  final List<Chapter> chapters;
+  
+  const PaginationResult({
+    required this.pages,
+    required this.chapters,
+  });
+}
+
+Future<PaginationResult> paginateBook(
   List<BookBlock> blocks, 
+  List<Chapter> chapters,
   PaginatorConfig config
 ) async {
   final allPages = <List<TextLine>>[];
@@ -30,17 +42,24 @@ Future<List<List<TextLine>>> paginateBook(
   
   final paragraphSpacing = config.fontSize * 0.15;
   const heightBuffer = 1.5;
+  
+  // Карта: индекс блока -> номер страницы, на которой он оказался
+  final blockToPage = <int, int>{};
 
-  for (final block in blocks) {
+  for (int blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
+    final block = blocks[blockIdx];
     if (block.type == BlockType.emptyLine) continue;
 
-    // 1. ЗАГОЛОВКИ
     if (block.type == BlockType.title) {
+      // Заголовок всегда начинает новую страницу
       if (currentPage.isNotEmpty) {
         allPages.add(currentPage);
         currentPage = [];
         currentHeight = 0;
       }
+      
+      // Запоминаем: этот блок (заголовок главы) находится на странице allPages.length
+      blockToPage[blockIdx] = allPages.length;
       
       final titleSize = config.fontSize * 1.4;
       final painter = TextPainter(
@@ -74,7 +93,6 @@ Future<List<List<TextLine>>> paginateBook(
       continue;
     }
 
-    // 2. ЭПИГРАФЫ
     if (block.type == BlockType.epigraph) {
       final epiSize = config.fontSize * 0.9;
       final painter = TextPainter(
@@ -110,7 +128,6 @@ Future<List<List<TextLine>>> paginateBook(
       continue;
     }
 
-    // 3. ПАРАГРАФЫ
     if (block.type == BlockType.paragraph) {
       String remainingText = block.text;
       bool isFirstLine = true;
@@ -234,6 +251,26 @@ Future<List<List<TextLine>>> paginateBook(
     allPages.add(currentPage);
   }
 
+  // Сопоставляем главы с номерами страниц через карту blockToPage
+  final updatedChapters = chapters.map((chapter) {
+    return Chapter(
+      title: chapter.title,
+      startPageIndex: blockToPage[chapter.blockIndex] ?? 0,
+      blockIndex: chapter.blockIndex,
+    );
+  }).toList();
+
   print('Пагинация завершена. Страниц: ${allPages.length}');
-  return allPages;
+  print('Глав: ${updatedChapters.length}');
+  
+  // Для отладки — выводим первые 5 глав
+  for (int i = 0; i < updatedChapters.length && i < 5; i++) {
+    final ch = updatedChapters[i];
+    print('  ${ch.title} -> страница ${ch.startPageIndex + 1}');
+  }
+
+  return PaginationResult(
+    pages: allPages,
+    chapters: updatedChapters,
+  );
 }

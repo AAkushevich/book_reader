@@ -20,7 +20,7 @@ class TableOfContentsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: const Color(0xFF1A1A2E), // Всегда тёмный фон
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A2E),
         elevation: 0,
@@ -86,7 +86,7 @@ class TableOfContentsScreen extends StatelessWidget {
           // Главы
           ...chapters.map((chapter) {
             final isCurrentChapter = chapter.startPageIndex == currentPageIndex;
-            final isSubChapter = chapter.title.toLowerCase().contains('глава');
+            final isSubChapter = _isSubChapter(chapter.title);
             
             return GestureDetector(
               onTap: () => onChapterTap(chapter.startPageIndex),
@@ -127,5 +127,12 @@ class TableOfContentsScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  bool _isSubChapter(String title) {
+    final lowerTitle = title.toLowerCase();
+    return lowerTitle.contains('глава') || 
+           lowerTitle.contains('том') || 
+           lowerTitle.contains('часть');
   }
 }

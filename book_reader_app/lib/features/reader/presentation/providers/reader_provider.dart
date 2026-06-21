@@ -108,26 +108,27 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
 
       final resultState = await _recalculatePages(
         bookContent.blocks, 
+        bookContent.chapters,
         progress, 
         screenSize, 
         textScaler,
-      );
-      
-      return resultState.copyWith(
         bookTitle: finalTitle,
         bookAuthor: finalAuthor,
-        chapters: bookContent.chapters,
-        textScaler: textScaler,
       );
+      
+      return resultState;
     });
   }
 
   Future<ReaderState> _recalculatePages(
     List<BookBlock> blocks, 
+    List<Chapter> chapters,
     ReadingProgress progress, 
     Size screenSize,
-    TextScaler textScaler,
-  ) async {
+    TextScaler textScaler, {
+    String bookTitle = 'Неизвестная книга',
+    String bookAuthor = 'Автор неизвестен',
+  }) async {
     final config = PaginatorConfig(
       fontSize: progress.fontSize,
       fontFamily: progress.fontFamily,
@@ -137,20 +138,23 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       textScaler: textScaler,
     );
 
-    final pages = await paginateBook(blocks, config);
-    final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
+    final result = await paginateBook(blocks, chapters, config);
+    final safeIndex = progress.currentPageIndex.clamp(0, result.pages.length - 1);
 
-    print('📊 Блоков: ${blocks.length} | 📄 Страниц: ${pages.length}');
-    print('📐 Screen: ${screenSize.width}x${screenSize.height}');
-    print('📐 MaxHeight: ${config.maxHeight}');
+    print('Блоков: ${blocks.length} | Страниц: ${result.pages.length}');
+    print('Screen: ${screenSize.width}x${screenSize.height}');
+    print('MaxHeight: ${config.maxHeight}');
 
     return ReaderState(
       blocks: blocks,
-      pages: pages,
+      pages: result.pages,
       currentPageIndex: safeIndex,
       progress: progress,
       isReady: true,
       textScaler: textScaler,
+      bookTitle: bookTitle,
+      bookAuthor: bookAuthor,
+      chapters: result.chapters,
     );
   }
 
@@ -169,9 +173,12 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       await _repo.saveProgress(updatedProgress);
       return await _recalculatePages(
         current.blocks, 
+        current.chapters,
         updatedProgress, 
         screenSize, 
         current.textScaler,
+        bookTitle: current.bookTitle,
+        bookAuthor: current.bookAuthor,
       );
     });
   }
@@ -184,9 +191,12 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       await _repo.saveProgress(updatedProgress);
       return await _recalculatePages(
         current.blocks, 
+        current.chapters,
         updatedProgress, 
         screenSize, 
         current.textScaler,
+        bookTitle: current.bookTitle,
+        bookAuthor: current.bookAuthor,
       );
     });
   }
@@ -199,9 +209,46 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       await _repo.saveProgress(updatedProgress);
       return await _recalculatePages(
         current.blocks, 
+        current.chapters,
         updatedProgress, 
         screenSize, 
         current.textScaler,
+        bookTitle: current.bookTitle,
+        bookAuthor: current.bookAuthor,
+      );
+    });
+  }
+
+  Future<void> changeTheme(int themeIndex, Size screenSize) async {
+    final current = state.value;
+    if (current == null) return;
+    
+    state = await AsyncValue.guard(() async {
+      final updatedProgress = current.progress!.updateSettings(themeIndex: themeIndex);
+      await _repo.saveProgress(updatedProgress);
+      return current.copyWith(progress: updatedProgress);
+    });
+  }
+
+  Future<void> changeFont(int fontIndex, Size screenSize) async {
+    final current = state.value;
+    if (current == null) return;
+    
+    state = await AsyncValue.guard(() async {
+      final fontName = ReadingProgress.getFontName(fontIndex);
+      final updatedProgress = current.progress!.updateSettings(
+        fontIndex: fontIndex,
+        fontFamily: fontName,
+      );
+      await _repo.saveProgress(updatedProgress);
+      return await _recalculatePages(
+        current.blocks, 
+        current.chapters,
+        updatedProgress, 
+        screenSize, 
+        current.textScaler,
+        bookTitle: current.bookTitle,
+        bookAuthor: current.bookAuthor,
       );
     });
   }

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
-/// 3 готовые темы для читалки. Тебе не нужно ничего менять в цветах!
 class ReaderThemeData {
-  final Color backgroundColor; // Цвет фона страницы
-  final Color textColor;       // Цвет текста
-  final Color accentColor;     // Цвет кнопок и прогресса
+  final Color backgroundColor;
+  final Color textColor;
+  final Color accentColor;
 
   const ReaderThemeData({
     required this.backgroundColor,
@@ -12,35 +11,44 @@ class ReaderThemeData {
     required this.accentColor,
   });
 
-  /// ☀️ ДЕНЬ (Белый): Классический белый фон, но текст не чисто чёрный, 
-  /// а тёмно-серый (#1A1A1A), чтобы не резало глаза.
-  static const dayWhite = ReaderThemeData(
-    backgroundColor: Color(0xFFFFFFFF),
+  // ✅ 4 ТЕМЫ
+  static const ReaderThemeData white = ReaderThemeData(
+    backgroundColor: Colors.white,
     textColor: Color(0xFF1A1A1A),
-    accentColor: Color(0xFF2196F3),
+    accentColor: Color(0xFF6C63FF),
   );
 
-  /// 📜 ДЕНЬ (Сепия): Цвет старой бумаги. Самый щадящий для глаз при долгом чтении.
-  static const daySepia = ReaderThemeData(
+  static const ReaderThemeData sepia = ReaderThemeData(
     backgroundColor: Color(0xFFF4ECD8),
     textColor: Color(0xFF5B4636),
-    accentColor: Color(0xFF8D6E63),
+    accentColor: Color(0xFF8B7355),
   );
 
-  /// 🌙 НОЧЬ: Чисто чёрный фон (экономит батарею на OLED), 
-  /// но текст светло-серый (#A0A0A0), чтобы не было эффекта "светящегося пятна".
-  static const nightOled = ReaderThemeData(
-    backgroundColor: Color(0xFF000000),
-    textColor: Color(0xFFA0A0A0),
-    accentColor: Color(0xFF607D8B),
+  static const ReaderThemeData dark = ReaderThemeData(
+    backgroundColor: Color(0xFF2C2C2C),
+    textColor: Color(0xFFE0E0E0),
+    accentColor: Color(0xFF6C63FF),
   );
-}
 
-class AppFonts {
-  static const String ptSerif = 'PTSerif';
-  static const String sourceSerif4 = 'SourceSerif4';
-  static const String comfortaa = 'Comfortaa';
-  
+  static const ReaderThemeData black = ReaderThemeData(
+    backgroundColor: Colors.black,
+    textColor: Color(0xFFE0E0E0),
+    accentColor: Color(0xFF6C63FF),
+  );
 
-  static const List<String> available = [ptSerif, sourceSerif4, comfortaa];
+  // Метод для получения темы по индексу
+  static ReaderThemeData getByIndex(int index) {
+    switch (index) {
+      case 0:
+        return white;
+      case 1:
+        return sepia;
+      case 2:
+        return dark;
+      case 3:
+        return black;
+      default:
+        return sepia;
+    }
+  }
 }
