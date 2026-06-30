@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
+import 'package:book_reader_app/features/reader/domain/entities/page_layout.dart';
 
 class TableOfContentsScreen extends StatelessWidget {
   final String bookTitle;
   final String bookAuthor;
   final List<Chapter> chapters;
   final int currentPageIndex;
+  final List<PageLayout> pages; // <-- теперь нужен pages
   final ValueChanged<int> onChapterTap;
 
   const TableOfContentsScreen({
@@ -14,13 +16,14 @@ class TableOfContentsScreen extends StatelessWidget {
     required this.bookAuthor,
     required this.chapters,
     required this.currentPageIndex,
+    required this.pages,
     required this.onChapterTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E), // Всегда тёмный фон
+      backgroundColor: const Color(0xFF1A1A2E),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1A1A2E),
         elevation: 0,
@@ -82,14 +85,21 @@ class TableOfContentsScreen extends StatelessWidget {
             ),
           ),
           const Divider(height: 1, color: Color(0xFF2A2A4A)),
-          
+
           // Главы
-          ...chapters.map((chapter) {
-            final isCurrentChapter = chapter.startPageIndex == currentPageIndex;
+          ...chapters.asMap().entries.map((entry) {
+            final chapterIndex = entry.key;
+            final chapter = entry.value;
+            final pageForChapter = _findPageForChapter(chapterIndex);
+            final isCurrentChapter = pageForChapter == currentPageIndex;
             final isSubChapter = _isSubChapter(chapter.title);
-            
+
             return GestureDetector(
-              onTap: () => onChapterTap(chapter.startPageIndex),
+              onTap: () {
+                if (pageForChapter != null) {
+                  onChapterTap(pageForChapter);
+                }
+              },
               child: Container(
                 padding: EdgeInsets.only(
                   left: isSubChapter ? 32 : 16,
@@ -112,13 +122,14 @@ class TableOfContentsScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    Text(
-                      '${chapter.startPageIndex + 1}',
-                      style: TextStyle(
-                        color: isCurrentChapter ? const Color(0xFF6C63FF) : Colors.grey,
-                        fontSize: 14,
+                    if (pageForChapter != null)
+                      Text(
+                        '${pageForChapter + 1}',
+                        style: TextStyle(
+                          color: isCurrentChapter ? const Color(0xFF6C63FF) : Colors.grey,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -129,10 +140,20 @@ class TableOfContentsScreen extends StatelessWidget {
     );
   }
 
+  /// Ищем первую страницу, у которой chapterIndex совпадает с заданным.
+  int? _findPageForChapter(int chapterIndex) {
+    for (int i = 0; i < pages.length; i++) {
+      if (pages[i].chapterIndex == chapterIndex) {
+        return i;
+      }
+    }
+    return null;
+  }
+
   bool _isSubChapter(String title) {
     final lowerTitle = title.toLowerCase();
-    return lowerTitle.contains('глава') || 
-           lowerTitle.contains('том') || 
-           lowerTitle.contains('часть');
+    return lowerTitle.contains('глава') ||
+        lowerTitle.contains('том') ||
+        lowerTitle.contains('часть');
   }
 }

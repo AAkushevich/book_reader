@@ -20,7 +20,6 @@ class EpubParser implements BookParser {
         if (file.content != null) {
           final contentBytes = file.content as List<int>;
           final content = utf8.decode(contentBytes);
-          
           try {
             final doc = XmlDocument.parse(content);
             final body = doc.findAllElements('body').firstOrNull;
@@ -28,7 +27,7 @@ class EpubParser implements BookParser {
               _processHtmlBody(body, blocks, chapters);
             }
           } catch (e) {
-            // Игнорируем невалидные XML
+            // Игнорируем невалидный XML
           }
         }
       }
@@ -41,36 +40,25 @@ class EpubParser implements BookParser {
     for (final child in body.children) {
       if (child is XmlElement) {
         final tagName = child.name.local.toLowerCase();
-        
-        // Заголовки глав
         if (tagName == 'h1' || tagName == 'h2' || tagName == 'h3') {
           final title = child.innerText.trim();
           if (title.isNotEmpty) {
-            blocks.add(BookBlock.emptyLine());
             blocks.add(BookBlock.title(title));
-            blocks.add(BookBlock.emptyLine());
-            
             chapters.add(Chapter(
               title: title,
               startPageIndex: 0,
-              blockIndex: blocks.length - 2,
+              blockIndex: blocks.length - 1,
             ));
           }
-        }
-        // Параграфы
-        else if (tagName == 'p') {
+        } else if (tagName == 'p') {
           final text = child.innerText.trim();
           if (text.isNotEmpty) {
             blocks.add(BookBlock.paragraph(text));
           }
-        }
-        // Цитаты
-        else if (tagName == 'blockquote') {
+        } else if (tagName == 'blockquote') {
           final text = child.innerText.trim();
           if (text.isNotEmpty) {
-            blocks.add(BookBlock.emptyLine());
             blocks.add(BookBlock.epigraph(text));
-            blocks.add(BookBlock.emptyLine());
           }
         }
       }

@@ -1,21 +1,22 @@
 import 'package:book_reader_app/core/theme/app_fonts.dart';
+import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
 import 'package:book_reader_app/features/reader/presentation/pages/table_of_contents_screen.dart';
+import 'package:book_reader_app/features/reader/presentation/widgets/page_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/features/reader/presentation/providers/reader_provider.dart';
 import 'package:book_reader_app/core/theme/reader_themes.dart';
-import 'package:book_reader_app/features/reader/domain/entities/reading_progress.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final String filePath;
-  final String bookTitle;  
-  final String bookAuthor; 
+  final String bookTitle;
+  final String bookAuthor;
 
   const ReaderScreen({
-    super.key, 
+    super.key,
     required this.filePath,
-    required this.bookTitle,  
-    required this.bookAuthor,  
+    required this.bookTitle,
+    required this.bookAuthor,
   });
 
   @override
@@ -48,7 +49,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
   void dispose() {
     _saveProgressOnExit();
     WidgetsBinding.instance.removeObserver(this);
-    _pageController?.dispose(); 
+    _pageController?.dispose();
     super.dispose();
   }
 
@@ -163,133 +164,75 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
 
         _pageController ??= PageController(initialPage: state.currentPageIndex);
 
-        return Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: state.pages.length,
-              onPageChanged: (index) => ref.read(readerProvider.notifier).goToPage(index),
-              itemBuilder: (context, index) {
-                final pageLines = state.pages[index];
-                final fontSize = state.progress?.fontSize ?? 16.0;
-                final fontFamily = state.progress?.fontFamily ?? 'PTSerif';
-                final lineHeight = state.progress?.lineHeight ?? 1.5;
-                
-                return Container(
-                  padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: pageLines.map((line) {
-                      final textStyle = TextStyle(
-                        fontSize: fontSize,
-                        fontFamily: fontFamily,
-                        height: lineHeight,
-                        color: theme.textColor,
-                      );
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final contentWidth = constraints.maxWidth - 40;
+            final contentHeight = constraints.maxHeight - 60;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ref.read(contentSizeProvider.notifier).update(Size(contentWidth, contentHeight));
+            });
 
-                      if (line.isTitle) {
-                        return Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.symmetric(vertical: 20.0),
-                          child: Text(
-                            line.text,
-                            style: TextStyle(
-                              fontSize: fontSize * 1.4,
-                              fontFamily: fontFamily,
-                              fontWeight: FontWeight.bold,
-                              color: theme.textColor,
-                              height: 1.3,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      }
-                      
-                      if (line.isEpigraph) {
-                        return Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.only(bottom: 16.0),
-                          child: Text(
-                            line.text,
-                            style: TextStyle(
-                              fontSize: fontSize * 0.9,
-                              fontFamily: fontFamily,
-                              fontStyle: FontStyle.italic,
-                              color: theme.textColor.withOpacity(0.8),
-                              height: 1.4,
-                            ),
-                            textAlign: TextAlign.right,
-                          ),
-                        );
-                      }
-
-                      if (line.isFirstLineOfParagraph) {
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: fontSize * 0.1),
-                          child: Text(
-                            '\u00A0\u00A0\u00A0\u00A0' + line.text,
-                            style: textStyle,
-                            textAlign: TextAlign.justify,
-                          ),
-                        );
-                      }
-
-                      return Text(
-                        line.text,
-                        style: textStyle,
-                        textAlign: TextAlign.justify,
-                      );
-                    }).toList(),
+            return Stack(
+              children: [
+                PageView.builder(
+                  controller: _pageController,
+                  itemCount: state.pages.length,
+                  onPageChanged: (index) => ref.read(readerProvider.notifier).goToPage(index),
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+                      child: CustomPaint(
+                        painter: PagePainter(state.pages[index]),
+                        size: Size.infinite,
+                      ),
+                    );
+                  },
+                ),
+                // Тройная зона тапов
+                Positioned.fill(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 2,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () {
+                            if (state.currentPageIndex > 0) {
+                              _pageController?.previousPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                      Expanded(
+                        flex: 6,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () => setState(() => _showControls = !_showControls),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () {
+                            if (state.currentPageIndex < state.pages.length - 1) {
+                              _pageController?.nextPage(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              },
-            ),
-            Positioned.fill(
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        if (state.currentPageIndex > 0) {
-                          _pageController?.previousPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    flex: 6,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        setState(() {
-                          _showControls = !_showControls;
-                        });
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        if (state.currentPageIndex < state.pages.length - 1) {
-                          _pageController?.nextPage(
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -461,6 +404,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
                           bookAuthor: state.bookAuthor,
                           chapters: state.chapters,
                           currentPageIndex: state.currentPageIndex,
+                          pages: state.pages,
                           onChapterTap: (pageIndex) {
                             Navigator.pop(context);
                             _pageController?.jumpToPage(pageIndex);
@@ -542,7 +486,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
     final currentThemeIndex = state.progress?.themeIndex ?? 1;
     final currentFontIndex = state.progress?.fontIndex ?? 0;
     final fontName = ReadingProgress.getFontName(currentFontIndex);
-    
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -558,7 +502,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
             ],
           ),
           const SizedBox(height: 24),
-          
+
           GestureDetector(
             onTap: () {
               final nextFontIndex = (currentFontIndex + 1) % 3;
@@ -578,7 +522,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
             ),
           ),
           const SizedBox(height: 8),
-          
+
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(3, (index) {
@@ -594,7 +538,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
             }),
           ),
           const SizedBox(height: 24),
-          
+
           Row(
             children: [
               Expanded(
@@ -627,7 +571,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
       ),
     );
   }
-  
+
   Widget _buildThemeCircle(Color color, bool isSelected, int index) {
     return GestureDetector(
       onTap: () {
@@ -703,7 +647,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
                     final current = state.progress?.fontSize ?? 16.0;
                     final newSize = (current - 1).clamp(12.0, 32.0);
                     ref.read(readerProvider.notifier).changeFontSize(
-                      newSize, 
+                      newSize,
                       MediaQuery.of(context).size,
                     );
                   },
@@ -715,7 +659,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
                     final current = state.progress?.fontSize ?? 16.0;
                     final newSize = (current + 1).clamp(12.0, 32.0);
                     ref.read(readerProvider.notifier).changeFontSize(
-                      newSize, 
+                      newSize,
                       MediaQuery.of(context).size,
                     );
                   },
@@ -736,7 +680,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
 
   Widget _buildProgressIndicator(AsyncValue<ReaderState> asyncState, ReaderThemeData theme) {
     final state = asyncState.value;
-        
+
     if (state == null || !state.isReady || state.pages.isEmpty) {
       return const SizedBox.shrink();
     }

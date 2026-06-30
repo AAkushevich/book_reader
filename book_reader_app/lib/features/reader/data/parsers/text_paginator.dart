@@ -1,276 +1,270 @@
-import 'package:flutter/material.dart';
-import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
-import 'package:book_reader_app/features/reader/domain/entities/text_line.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
+import 'package:flutter/painting.dart';
+import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
+import 'package:book_reader_app/features/reader/domain/entities/page_layout.dart';
+import 'package:book_reader_app/features/reader/domain/entities/rendered_line.dart';
 
 class PaginatorConfig {
-  final double fontSize;
-  final String fontFamily;
-  final double lineHeight;
-  final double maxWidth;
-  final double maxHeight;
-  final TextScaler textScaler;
-  
+  final double contentWidth;
+  final double contentHeight;
+  final TextStyle textStyle;
+  final TextStyle titleStyle;
+  final TextStyle epigraphStyle;
+  final double firstLineIndent;
+  final Hyphenator? hyphenator;
+
   const PaginatorConfig({
-    required this.fontSize,
-    required this.fontFamily,
-    this.lineHeight = 1.5,
-    required this.maxWidth,
-    required this.maxHeight,
-    this.textScaler = TextScaler.noScaling,
+    required this.contentWidth,
+    required this.contentHeight,
+    required this.textStyle,
+    required this.titleStyle,
+    required this.epigraphStyle,
+    this.firstLineIndent = 0,
+    this.hyphenator,
   });
 }
 
-class PaginationResult {
-  final List<List<TextLine>> pages;
-  final List<Chapter> chapters;
-  
-  const PaginationResult({
-    required this.pages,
-    required this.chapters,
-  });
+abstract class Hyphenator {
+  int? hyphenate(String word);
 }
 
-Future<PaginationResult> paginateBook(
-  List<BookBlock> blocks, 
-  List<Chapter> chapters,
-  PaginatorConfig config
-) async {
-  final allPages = <List<TextLine>>[];
-  var currentPage = <TextLine>[];
-  double currentHeight = 0;
-  
-  final paragraphSpacing = config.fontSize * 0.15;
-  const heightBuffer = 1.5;
-  
-  // Карта: индекс блока -> номер страницы, на которой он оказался
-  final blockToPage = <int, int>{};
+class TextPaginator {
+  Future<List<PageLayout>> paginate(
+    List<BookBlock> blocks,
+    List<Chapter> chapters,
+    PaginatorConfig config,
+  ) async {
+    return _paginateImpl(blocks, chapters, config);
+  }
 
-  for (int blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
-    final block = blocks[blockIdx];
-    if (block.type == BlockType.emptyLine) continue;
+  List<PageLayout> _paginateImpl(
+    List<BookBlock> blocks,
+    List<Chapter> chapters,
+    PaginatorConfig config,
+  ) {
+    final pages = <PageLayout>[];
+    var currentLines = <RenderedLine>[];
+    double currentY = 0.0;
+    int currentChapterIdx = 0;
 
-    if (block.type == BlockType.title) {
-      // Заголовок всегда начинает новую страницу
-      if (currentPage.isNotEmpty) {
-        allPages.add(currentPage);
-        currentPage = [];
-        currentHeight = 0;
+    for (int i = 0; i < blocks.length; i++) {
+      final block = blocks[i];
+
+      while (currentChapterIdx < chapters.length - 1 &&
+          chapters[currentChapterIdx + 1].blockIndex <= i) {
+        currentChapterIdx++;
       }
-      
-      // Запоминаем: этот блок (заголовок главы) находится на странице allPages.length
-      blockToPage[blockIdx] = allPages.length;
-      
-      final titleSize = config.fontSize * 1.4;
-      final painter = TextPainter(
-        text: TextSpan(
-          text: block.text,
-          style: TextStyle(
-            fontSize: titleSize,
-            fontWeight: FontWeight.bold,
-            fontFamily: config.fontFamily,
-            height: 1.3,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: config.textScaler, 
-        textHeightBehavior: const TextHeightBehavior(
-          applyHeightToFirstAscent: true,
-          applyHeightToLastDescent: true,
-        ),
-      );
-      painter.layout(maxWidth: config.maxWidth);
-      
-      final titleHeight = painter.height + heightBuffer;
-      currentPage.add(TextLine(text: block.text, isTitle: true));
-      currentHeight += titleHeight;
-      
-      if (currentHeight < config.maxHeight) {
-        currentHeight += paragraphSpacing;
-      }
-      
-      painter.dispose();
-      continue;
-    }
 
-    if (block.type == BlockType.epigraph) {
-      final epiSize = config.fontSize * 0.9;
-      final painter = TextPainter(
-        text: TextSpan(
-          text: block.text,
-          style: TextStyle(
-            fontSize: epiSize,
-            fontStyle: FontStyle.italic,
-            fontFamily: config.fontFamily,
-            height: 1.4,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: config.textScaler,
-        textHeightBehavior: const TextHeightBehavior(
-          applyHeightToFirstAscent: true,
-          applyHeightToLastDescent: true,
-        ),
-      );
-      painter.layout(maxWidth: config.maxWidth);
-      
-      final epiHeight = painter.height + heightBuffer;
-      
-      if (currentHeight + epiHeight > config.maxHeight && currentPage.isNotEmpty) {
-        allPages.add(currentPage);
-        currentPage = [];
-        currentHeight = 0;
-      }
-      
-      currentPage.add(TextLine(text: block.text, isEpigraph: true));
-      currentHeight += epiHeight;
-      painter.dispose();
-      continue;
-    }
+      // --- ЗАГОЛОВОК ---
+      if (block.type == BlockType.title) {
+        if (currentY > 0) {
+          pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+          currentLines = [];
+          currentY = 0.0;
+        }
 
-    if (block.type == BlockType.paragraph) {
-      String remainingText = block.text;
-      bool isFirstLine = true;
-      
-      while (remainingText.isNotEmpty) {
-        final painter = TextPainter(
-          text: TextSpan(
-            text: remainingText,
-            style: TextStyle(
-              fontSize: config.fontSize,
-              fontFamily: config.fontFamily,
-              height: config.lineHeight,
-            ),
-          ),
+        final tp = TextPainter(
+          text: TextSpan(text: block.text, style: config.titleStyle),
           textDirection: TextDirection.ltr,
-          textScaler: config.textScaler, 
-          textHeightBehavior: const TextHeightBehavior(
-            applyHeightToFirstAscent: true,
-            applyHeightToLastDescent: true,
-          ),
-        );
-        painter.layout(maxWidth: config.maxWidth);
-        
-        final lineMetrics = painter.computeLineMetrics();
-        
-        if (lineMetrics.isEmpty) {
-          remainingText = '';
-          continue;
+          textAlign: TextAlign.center,
+        )..layout(maxWidth: config.contentWidth);
+
+        final topSpacing = config.titleStyle.fontSize! * 0.5;
+        if (currentY + topSpacing <= config.contentHeight) {
+          currentY += topSpacing;
         }
-        
-        double accumulatedHeight = 0;
-        int fittingLinesCount = 0;
-        
-        for (int i = 0; i < lineMetrics.length; i++) {
-          final line = lineMetrics[i];
-          final lineHeight = line.height + heightBuffer;
-          
-          if (currentHeight + accumulatedHeight + lineHeight > config.maxHeight) {
-            break;
-          }
-          
-          accumulatedHeight += lineHeight;
-          fittingLinesCount = i + 1;
+
+        if (currentY + tp.height > config.contentHeight && currentLines.isNotEmpty) {
+          pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+          currentLines = [];
+          currentY = 0.0;
+          currentY += topSpacing;
         }
-        
-        if (fittingLinesCount == 0) {
-          fittingLinesCount = 1;
-          accumulatedHeight = lineMetrics[0].height + heightBuffer;
+
+        currentLines.add(RenderedLine(
+          text: block.text,
+          style: config.titleStyle,
+          offsetX: 0,
+          offsetY: currentY,
+          height: tp.height,
+          textAlign: TextAlign.center,
+          lineWidth: config.contentWidth,
+        ));
+        currentY += tp.height;
+
+        final bottomSpacing = config.titleStyle.fontSize! * 0.42;
+        if (currentY + bottomSpacing <= config.contentHeight) {
+          currentY += bottomSpacing;
         }
-        
-        if (fittingLinesCount >= lineMetrics.length) {
-          final fittingText = isFirstLine
-            ? '\u00A0\u00A0\u00A0\u00A0${remainingText.trimRight()}'
-            : remainingText.trimRight();
-          
-          currentPage.add(TextLine(
-            text: fittingText, 
-            isFirstLineOfParagraph: isFirstLine,
-          ));
-          currentHeight += accumulatedHeight;
-          remainingText = '';
-          
-          if (currentHeight < config.maxHeight) {
-            currentHeight += paragraphSpacing;
-          }
-        } else {
-          double lastLineBottom = 0;
-          for (int i = 0; i < fittingLinesCount; i++) {
-            lastLineBottom += lineMetrics[i].height;
-          }
-          
-          final position = painter.getPositionForOffset(
-            Offset(config.maxWidth / 2, lastLineBottom - 0.1)
-          );
-          int cutIndex = position.offset;
-          
-          if (cutIndex < remainingText.length && 
-              remainingText[cutIndex] != ' ' && 
-              remainingText[cutIndex] != '\n') {
-            final lastSpace = remainingText.lastIndexOf(' ', cutIndex);
-            if (lastSpace > 0) {
-              cutIndex = lastSpace;
+        continue;
+      }
+
+      // --- ЭПИГРАФ ---
+      if (block.type == BlockType.epigraph) {
+        final tp = TextPainter(
+          text: TextSpan(text: block.text, style: config.epigraphStyle),
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.center,
+        )..layout(maxWidth: config.contentWidth);
+
+        if (currentY + tp.height > config.contentHeight) {
+          pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+          currentLines = [];
+          currentY = 0.0;
+        }
+        currentLines.add(RenderedLine(
+          text: block.text,
+          style: config.epigraphStyle,
+          offsetX: 0,
+          offsetY: currentY,
+          height: tp.height,
+          textAlign: TextAlign.center,
+          lineWidth: config.contentWidth,
+        ));
+        currentY += tp.height;
+        continue;
+      }
+
+      // --- ПУСТАЯ СТРОКА ---
+      if (block.type == BlockType.emptyLine) {
+        final lineHeight = (config.textStyle.fontSize ?? 16) * (config.textStyle.height ?? 1.5);
+        if (currentY + lineHeight > config.contentHeight) {
+          pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+          currentLines = [];
+          currentY = 0.0;
+        }
+        currentLines.add(RenderedLine(
+          text: '',
+          style: config.textStyle,
+          offsetX: 0,
+          offsetY: currentY,
+          height: lineHeight,
+          textAlign: TextAlign.left,
+          lineWidth: config.contentWidth,
+        ));
+        currentY += lineHeight;
+        continue;
+      }
+
+      // --- ПАРАГРАФ ---
+      final paragraphLines = _layoutParagraph(
+        block.text,
+        style: config.textStyle,
+        maxWidth: config.contentWidth,
+        hyphenator: config.hyphenator,
+        firstLineIndent: config.firstLineIndent,
+      );
+
+      for (int j = 0; j < paragraphLines.length; j++) {
+        final lineText = paragraphLines[j];
+        final double lineWidth = (j == 0) ? config.contentWidth - config.firstLineIndent : config.contentWidth;
+        final tp = TextPainter(
+          text: TextSpan(text: lineText, style: config.textStyle),
+          textDirection: TextDirection.ltr,
+          textAlign: TextAlign.justify,
+        )..layout(maxWidth: lineWidth);
+        final lineHeight = tp.height;
+
+        if (currentY + lineHeight > config.contentHeight) {
+          pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+          currentLines = [];
+          currentY = 0.0;
+        }
+
+        double indentX = (j == 0) ? config.firstLineIndent : 0;
+        currentLines.add(RenderedLine(
+          text: lineText,
+          style: config.textStyle,
+          offsetX: indentX,
+          offsetY: currentY,
+          height: lineHeight,
+          isHyphenated: lineText.endsWith('-') && block.text.isNotEmpty,
+          textAlign: TextAlign.justify,
+          lineWidth: lineWidth,
+        ));
+        currentY += lineHeight;
+      }
+    }
+
+    if (currentLines.isNotEmpty) {
+      pages.add(_createPage(currentLines, chapters, currentChapterIdx));
+    }
+
+    return pages;
+  }
+
+  PageLayout _createPage(List<RenderedLine> lines, List<Chapter> chapters, int chapterIdx) {
+    return PageLayout(
+      lines: List.unmodifiable(lines),
+      startBlockIndex: lines.isNotEmpty ? chapters[chapterIdx].blockIndex : 0,
+      chapterIndex: chapterIdx,
+    );
+  }
+
+  List<String> _layoutParagraph(
+    String text, {
+    required TextStyle style,
+    required double maxWidth,
+    Hyphenator? hyphenator,
+    double firstLineIndent = 0,
+  }) {
+    final lines = <String>[];
+    if (text.isEmpty) return lines;
+
+    int start = 0;
+    double currentLineWidth = maxWidth - firstLineIndent;
+    bool isFirst = true;
+
+    while (start < text.length) {
+      final tp = TextPainter(
+        text: TextSpan(text: text.substring(start), style: style),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: currentLineWidth);
+
+      final endOffset = tp.getPositionForOffset(Offset(currentLineWidth, 0)).offset;
+      if (endOffset <= 0) {
+        lines.add(text.substring(start, start + 1));
+        start += 1;
+        currentLineWidth = maxWidth;
+        isFirst = false;
+        continue;
+      }
+
+      int end = start + endOffset;
+      if (end > text.length) end = text.length;
+
+      String line = text.substring(start, end);
+
+      if (hyphenator != null && end < text.length) {
+        final nextChar = text[end];
+        if (![' ', '\t', '\n'].contains(nextChar)) {
+          int lastSpace = line.lastIndexOf(' ');
+          int breakPoint = lastSpace > 0 ? lastSpace + 1 : 0;
+          String word = (breakPoint == 0) ? line : line.substring(breakPoint);
+          final hyphenPos = hyphenator.hyphenate(word);
+          if (hyphenPos != null && hyphenPos > 1 && hyphenPos < word.length - 1) {
+            final candidate = line.substring(0, breakPoint) + word.substring(0, hyphenPos) + '-';
+            final candidateTp = TextPainter(
+              text: TextSpan(text: candidate, style: style),
+              textDirection: TextDirection.ltr,
+            )..layout(maxWidth: currentLineWidth);
+            if (candidateTp.width <= currentLineWidth) {
+              lines.add(candidate.trimRight());
+              start = start + breakPoint + hyphenPos;
+              currentLineWidth = maxWidth;
+              isFirst = false;
+              continue;
             }
           }
-          
-          if (cutIndex == 0) cutIndex = 1;
-          if (cutIndex > remainingText.length) cutIndex = remainingText.length;
-          
-          final fittingText = isFirstLine
-            ? '\u00A0\u00A0\u00A0\u00A0${remainingText.substring(0, cutIndex).trimRight()}'
-            : remainingText.substring(0, cutIndex).trimRight();
-          
-          currentPage.add(TextLine(
-            text: fittingText, 
-            isFirstLineOfParagraph: isFirstLine,
-          ));
-          currentHeight += accumulatedHeight;
-          remainingText = remainingText.substring(cutIndex).trimLeft();
-          isFirstLine = false;
-          
-          if (currentHeight < config.maxHeight) {
-            currentHeight += paragraphSpacing;
-          }
-          
-          final remainingSpace = config.maxHeight - currentHeight;
-          final preferredLineHeight = painter.preferredLineHeight + heightBuffer;
-          
-          if (remainingSpace < preferredLineHeight) {
-            allPages.add(currentPage);
-            currentPage = [];
-            currentHeight = 0;
-          }
         }
-        
-        painter.dispose();
       }
+
+      lines.add(line.trimRight());
+      start = end;
+      currentLineWidth = maxWidth;
+      isFirst = false;
     }
+
+    return lines;
   }
-
-  if (currentPage.isNotEmpty) {
-    allPages.add(currentPage);
-  }
-
-  // Сопоставляем главы с номерами страниц через карту blockToPage
-  final updatedChapters = chapters.map((chapter) {
-    return Chapter(
-      title: chapter.title,
-      startPageIndex: blockToPage[chapter.blockIndex] ?? 0,
-      blockIndex: chapter.blockIndex,
-    );
-  }).toList();
-
-  print('Пагинация завершена. Страниц: ${allPages.length}');
-  print('Глав: ${updatedChapters.length}');
-  
-  // Для отладки — выводим первые 5 глав
-  for (int i = 0; i < updatedChapters.length && i < 5; i++) {
-    final ch = updatedChapters[i];
-    print('  ${ch.title} -> страница ${ch.startPageIndex + 1}');
-  }
-
-  return PaginationResult(
-    pages: allPages,
-    chapters: updatedChapters,
-  );
 }
