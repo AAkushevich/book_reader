@@ -36,6 +36,7 @@ class TextPaginator {
   ) async {
     final sw = Stopwatch()..start();
     print('⏱️ Начало пагинации: ${blocks.length} блоков');
+    // Запускаем синхронно, т.к. UI не зависнет (вызывается внутри AsyncValue.guard)
     final result = _paginateImpl(blocks, chapters, config);
     print('⏱️ Пагинация завершена за ${sw.elapsedMilliseconds} ms, страниц: ${result.length}');
     return result;
@@ -51,8 +52,9 @@ class TextPaginator {
     double currentY = 0.0;
     int currentChapterIdx = 0;
 
-    final double normalLineHeight =
-        config.textStyle.fontSize! * (config.textStyle.height ?? 1.0);
+    // Константная высота строки для обычного текста
+    final double normalLineHeight = config.textStyle.fontSize! * (config.textStyle.height ?? 1.0);
+    // Переиспользуемый TextPainter для измерения заголовков/эпиграфов/разбивки
     final tp = TextPainter(textDirection: TextDirection.ltr);
 
     for (int i = 0; i < blocks.length; i++) {
@@ -63,7 +65,7 @@ class TextPaginator {
         currentChapterIdx++;
       }
 
-      // --- ЗАГОЛОВОК (точное измерение, их мало) ---
+      // --- ЗАГОЛОВОК ---
       if (block.type == BlockType.title) {
         if (currentY > 0) {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx));
@@ -76,8 +78,7 @@ class TextPaginator {
         final titleHeight = tp.height;
         final topSpacing = config.titleStyle.fontSize! * 0.5;
         currentY += topSpacing;
-        if (currentY + titleHeight > config.contentHeight &&
-            currentLines.isNotEmpty) {
+        if (currentY + titleHeight > config.contentHeight && currentLines.isNotEmpty) {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx));
           currentLines = [];
           currentY = topSpacing;
@@ -96,7 +97,7 @@ class TextPaginator {
         continue;
       }
 
-      // --- ЭПИГРАФ (аналогично) ---
+      // --- ЭПИГРАФ ---
       if (block.type == BlockType.epigraph) {
         tp.text = TextSpan(text: block.text, style: config.epigraphStyle);
         tp.textAlign = TextAlign.center;
@@ -139,34 +140,36 @@ class TextPaginator {
         continue;
       }
 
-      // --- ПАРАГРАФ (новый алгоритм: один layout на batch строк) ---
-      final paragraphLines = _layoutParagraph(
+      // --- ПАРАГРАФ (быстрая разбивка) ---
+      final lines = _splitParagraph(
         block.text,
         style: config.textStyle,
         maxWidth: config.contentWidth,
         firstLineIndent: config.firstLineIndent,
         painter: tp,
-        lineHeight: normalLineHeight,
-        hyphenator: config.hyphenator,
       );
 
-      for (final renderedLine in paragraphLines) {
-        if (currentY + renderedLine.height > config.contentHeight) {
+      for (int j = 0; j < lines.length; j++) {
+        final lineText = lines[j];
+        final double indentX = (j == 0) ? config.firstLineIndent : 0;
+        final double lineWidth = config.contentWidth - indentX;
+
+        if (currentY + normalLineHeight > config.contentHeight) {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx));
           currentLines = [];
           currentY = 0.0;
         }
 
         currentLines.add(RenderedLine(
-          text: renderedLine.text,
-          style: renderedLine.style,
-          offsetX: renderedLine.offsetX,
+          text: lineText,
+          style: config.textStyle,
+          offsetX: indentX,
           offsetY: currentY,
-          height: renderedLine.height,
-          textAlign: renderedLine.textAlign,
-          lineWidth: renderedLine.lineWidth,
+          height: normalLineHeight,
+          textAlign: TextAlign.justify,
+          lineWidth: lineWidth,
         ));
-        currentY += renderedLine.height;
+        currentY += normalLineHeight;
       }
     }
 
@@ -177,11 +180,7 @@ class TextPaginator {
     return pages;
   }
 
-  PageLayout _createPage(
-    List<RenderedLine> lines,
-    List<Chapter> chapters,
-    int chapterIdx,
-  ) {
+  PageLayout _createPage(List<RenderedLine> lines, List<Chapter> chapters, int chapterIdx) {
     return PageLayout(
       lines: lines.toList(),
       startBlockIndex: lines.isNotEmpty ? chapters[chapterIdx].blockIndex : 0,
@@ -189,119 +188,63 @@ class TextPaginator {
     );
   }
 
-  /// Разбивает текст параграфа на строки с RenderedLine.
-  /// Один layout() на batch строк вместо посимвольного подбора.
-  List<RenderedLine> _layoutParagraph(
+  List<String> _splitParagraph(
     String text, {
     required TextStyle style,
     required double maxWidth,
     required double firstLineIndent,
     required TextPainter painter,
-    required double lineHeight,
-    Hyphenator? hyphenator,
   }) {
-    final result = <RenderedLine>[];
-    if (text.isEmpty) return result;
+    final lines = <String>[];
+    if (text.isEmpty) return lines;
 
-    String remaining = text;
-    bool isFirstLine = true;
-
-    while (remaining.isNotEmpty) {
-      // Первая строка измеряется с отступом, остальные — без
-      final currentMaxWidth =
-          isFirstLine ? maxWidth - firstLineIndent : maxWidth;
-
-      // ✅ ОДИН layout на весь оставшийся текст
-      painter.text = TextSpan(text: remaining, style: style);
-      painter.layout(maxWidth: currentMaxWidth);
-
-      final metrics = painter.computeLineMetrics();
-      if (metrics.isEmpty) break;
-
-      // Берём ВСЕ строки из этого layout за один проход
-      int consumedEnd = 0;
-
-      for (int i = 0; i < metrics.length; i++) {
-        final metric = metrics[i];
-
-        // ✅ Надёжное получение границ строки через baseline
-        final lineStartPos = painter.getPositionForOffset(
-          Offset(0, metric.baseline),
-        );
-        final boundary = painter.getLineBoundary(lineStartPos);
-
-        int startOff = boundary.start;
-        int endOff = boundary.end;
-
-        // Защита: если startOff ушёл назад из-за rounding
-        if (i > 0 && startOff < consumedEnd) {
-          startOff = consumedEnd;
-        }
-
-        String lineText = remaining.substring(startOff, endOff).trimRight();
-
-        final isLastInBatch = (i == metrics.length - 1);
-        final isEndOfText = (endOff >= remaining.length);
-
-        // Если последняя строка в batch и конец попал в середину слова
-        if (isLastInBatch && !isEndOfText && endOff < remaining.length) {
-          final charAtEnd = remaining[endOff];
-          if (charAtEnd != ' ' && charAtEnd != '\n') {
-            final lastSpace = lineText.lastIndexOf(' ');
-            if (lastSpace > 0) {
-              endOff = startOff + lastSpace;
-              lineText = remaining.substring(startOff, endOff).trimRight();
-            } else if (hyphenator != null && lineText.length > 3) {
-              final hp = hyphenator.hyphenate(lineText);
-              if (hp != null && hp > 1 && hp < lineText.length - 1) {
-                lineText = lineText.substring(0, hp) + '-';
-                endOff = startOff + hp;
-              }
-            }
-          }
-        }
-
-        // Отслеживаем сколько текста реально обработано
-        consumedEnd = endOff;
-
-        final indentX = isFirstLine ? firstLineIndent : 0.0;
-
-        // ✅ Умный justify: последняя строка параграфа
-        final isLastLineOfParagraph = isEndOfText && isLastInBatch;
-        TextAlign textAlign;
-        if (isLastLineOfParagraph) {
-          final wordCount = lineText
-              .trim()
-              .split(RegExp(r'\s+'))
-              .where((w) => w.isNotEmpty)
-              .length;
-          textAlign = wordCount >= 4 ? TextAlign.justify : TextAlign.left;
-        } else {
-          textAlign = TextAlign.justify;
-        }
-
-        result.add(RenderedLine(
-          text: lineText,
-          style: style,
-          offsetX: indentX,
-          offsetY: 0, // Y рассчитывается в основном цикле пагинации
-          height: lineHeight,
-          textAlign: textAlign,
-          lineWidth: currentMaxWidth,
-        ));
-
-        isFirstLine = false;
+    int start = 0;
+    // Первая строка с отступом
+    if (firstLineIndent > 0) {
+      final firstWidth = maxWidth - firstLineIndent;
+      painter.text = TextSpan(text: text, style: style);
+      painter.layout(maxWidth: firstWidth);
+      final endOffset = painter.getPositionForOffset(Offset(firstWidth, 0)).offset;
+      int end = endOffset.clamp(1, text.length);
+      if (end < text.length && text[end] != ' ') {
+        int lastSpace = text.lastIndexOf(' ', end);
+        if (lastSpace > start) end = lastSpace;
       }
-
-      // Убираем обработанный текст
-      if (consumedEnd <= 0) {
-        // Защита от бесконечного цикла
-        remaining = remaining.substring(1);
-      } else {
-        remaining = remaining.substring(consumedEnd).trimLeft();
-      }
+      lines.add(text.substring(start, end).trimRight());
+      start = end;
+      while (start < text.length && text[start] == ' ') start++;
     }
 
-    return result;
+    if (start >= text.length) return lines;
+
+    // Остальные строки: один layout и извлечение через LineMetrics
+    painter.text = TextSpan(text: text.substring(start), style: style);
+    painter.layout(maxWidth: maxWidth);
+    final metrics = painter.computeLineMetrics();
+    int offset = start;
+    for (final m in metrics) {
+      final endOffset = painter.getPositionForOffset(Offset(m.width, m.baseline)).offset;
+      int end = offset + endOffset;
+      if (end > text.length) end = text.length;
+      if (end <= offset) break;
+      String lineText = text.substring(offset, end);
+      if (end < text.length && text[end] != ' ') {
+        int lastSpace = lineText.lastIndexOf(' ');
+        if (lastSpace > 0) {
+          end = offset + lastSpace;
+          lineText = text.substring(offset, end);
+        }
+      }
+      if (lineText.trim().isNotEmpty) {
+        lines.add(lineText.trimRight());
+      }
+      offset = end;
+      while (offset < text.length && text[offset] == ' ') offset++;
+    }
+    if (offset < text.length) {
+      lines.add(text.substring(offset).trimRight());
+    }
+
+    return lines;
   }
 }

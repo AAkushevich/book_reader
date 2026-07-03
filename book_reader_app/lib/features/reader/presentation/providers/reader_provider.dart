@@ -22,7 +22,6 @@ final bookTextExtractorProvider = Provider<BookTextExtractor>(
   (ref) => BookTextExtractor(),
 );
 
-/// Провайдер точных размеров контентной области (будет обновляться из LayoutBuilder)
 class ContentSizeNotifier extends Notifier<Size> {
   @override
   Size build() => const Size(300, 600);
@@ -36,7 +35,7 @@ final contentSizeProvider = NotifierProvider<ContentSizeNotifier, Size>(
 // ---------- Состояние ридера ----------
 class ReaderState {
   final List<BookBlock> blocks;
-  final List<PageLayout> pages;          // <-- теперь PageLayout
+  final List<PageLayout> pages;
   final int currentPageIndex;
   final ReadingProgress? progress;
   final bool isReady;
@@ -103,21 +102,27 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     String bookTitle,
     String bookAuthor,
     Size screenSize,
-    TextScaler textScaler, // параметр оставлен для совместимости, но не используется
+    TextScaler textScaler,
   ) async {
+    final stopwatch = Stopwatch()..start();
     String finalTitle = bookTitle.isNotEmpty ? bookTitle : filePath.split('/').last.split('.').first;
     String finalAuthor = bookAuthor.isNotEmpty ? bookAuthor : 'Автор неизвестен';
 
     state = await AsyncValue.guard(() async {
+      final t0 = stopwatch.elapsedMilliseconds;
       final existingProgress = await _repo.loadProgress(filePath);
       final progress = existingProgress ?? ReadingProgress.initial(filePath);
+      print('⏱ Загрузка прогресса: ${stopwatch.elapsedMilliseconds - t0} ms');
 
+      final t1 = stopwatch.elapsedMilliseconds;
       final bookContent = await _extractor.extract(progress.bookId);
+      print('⏱ Парсинг книги: ${stopwatch.elapsedMilliseconds - t1} ms, блоков: ${bookContent.blocks.length}');
 
       if (bookContent.blocks.isEmpty) {
         throw FormatException('Файл не содержит читаемого текста');
       }
 
+      final t2 = stopwatch.elapsedMilliseconds;
       final resultState = await _recalculatePages(
         bookContent.blocks,
         bookContent.chapters,
@@ -126,67 +131,70 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
         bookTitle: finalTitle,
         bookAuthor: finalAuthor,
       );
+      print('⏱ Пагинация: ${stopwatch.elapsedMilliseconds - t2} ms, страниц: ${resultState.pages.length}');
+      print('⏱ ОБЩЕЕ ВРЕМЯ открытия книги: ${stopwatch.elapsedMilliseconds} ms');
       return resultState;
     });
   }
 
-Future<ReaderState> _recalculatePages(
-  List<BookBlock> blocks,
-  List<Chapter> chapters,
-  ReadingProgress progress,
-  Size screenSize, {
-  String bookTitle = 'Неизвестная книга',
-  String bookAuthor = 'Автор неизвестен',
-}) async {
-  final contentWidth = screenSize.width - 40;
-  final contentHeight = screenSize.height - 60 - 5; // –5px, чтобы индикатор не налезал
+  Future<ReaderState> _recalculatePages(
+    List<BookBlock> blocks,
+    List<Chapter> chapters,
+    ReadingProgress progress,
+    Size screenSize, {
+    String bookTitle = 'Неизвестная книга',
+    String bookAuthor = 'Автор неизвестен',
+  }) async {
+    final contentWidth = screenSize.width - 40;
+    final contentHeight = screenSize.height - 60 - 5;
 
-  // Цвет текста из текущей темы
-  final theme = ReaderThemeData.getByIndex(progress.themeIndex);
-  final textColor = theme.textColor;
+    final theme = ReaderThemeData.getByIndex(progress.themeIndex);
+    final textColor = theme.textColor;
 
-  final baseStyle = TextStyle(
-    fontSize: progress.fontSize,
-    fontFamily: progress.fontFamily,
-    height: progress.lineHeight,
-    color: textColor,                  // теперь цвет динамический
-    wordSpacing: 1.2,                 // помогает justify растягивать строки
-  );
+    final baseStyle = TextStyle(
+      fontSize: progress.fontSize,
+      fontFamily: progress.fontFamily,
+      height: progress.lineHeight,
+      color: textColor,
+      wordSpacing: 1.2,
+    );
 
-  final config = PaginatorConfig(
-    contentWidth: contentWidth,
-    contentHeight: contentHeight,
-    textStyle: baseStyle,
-    titleStyle: baseStyle.copyWith(
-      fontSize: progress.fontSize * 1.4,
-      fontWeight: FontWeight.bold,
-      height: 1.3,
-      wordSpacing: 0,
-    ),
-    epigraphStyle: baseStyle.copyWith(
-      fontSize: progress.fontSize * 0.9,
-      fontStyle: FontStyle.italic,
-      height: 1.4,
-      color: textColor.withOpacity(0.7),
-    ),
-    firstLineIndent: progress.fontSize * 1.5,
-  );
+    final config = PaginatorConfig(
+      contentWidth: contentWidth,
+      contentHeight: contentHeight,
+      textStyle: baseStyle,
+      titleStyle: baseStyle.copyWith(
+        fontSize: progress.fontSize * 1.4,
+        fontWeight: FontWeight.bold,
+        height: 1.3,
+        wordSpacing: 0,
+      ),
+      epigraphStyle: baseStyle.copyWith(
+        fontSize: progress.fontSize * 0.9,
+        fontStyle: FontStyle.italic,
+        height: 1.4,
+        color: textColor.withOpacity(0.7),
+      ),
+      firstLineIndent: progress.fontSize * 1.5,
+    );
 
-  final paginator = TextPaginator();
-  final pages = await paginator.paginate(blocks, chapters, config);
-  final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
+    final paginator = TextPaginator();
+    final pages = await paginator.paginate(blocks, chapters, config);
+    final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
 
-  return ReaderState(
-    blocks: blocks,
-    pages: pages,
-    currentPageIndex: safeIndex,
-    progress: progress,
-    isReady: true,
-    bookTitle: bookTitle,
-    bookAuthor: bookAuthor,
-    chapters: chapters,
-  );
-}
+    print('📄 Пересчёт страниц: themeIndex=${progress.themeIndex}, fontSize=${progress.fontSize}, pages=${pages.length}');
+    return ReaderState(
+      blocks: blocks,
+      pages: pages,
+      currentPageIndex: safeIndex,
+      progress: progress,
+      isReady: true,
+      bookTitle: bookTitle,
+      bookAuthor: bookAuthor,
+      chapters: chapters,
+    );
+  }
+
   // ---------- Методы управления ----------
   Future<void> goToPage(int index) async {
     final current = state.value;
@@ -240,7 +248,11 @@ Future<ReaderState> _recalculatePages(
     state = await AsyncValue.guard(() async {
       final updatedProgress = current.progress!.updateSettings(themeIndex: themeIndex);
       await _repo.saveProgress(updatedProgress);
-      return current.copyWith(progress: updatedProgress);
+      print('🔄 Пересчёт страниц после смены темы на индекс $themeIndex');
+      return await _recalculatePages(
+        current.blocks, current.chapters, updatedProgress, screenSize,
+        bookTitle: current.bookTitle, bookAuthor: current.bookAuthor,
+      );
     });
   }
 
@@ -264,9 +276,17 @@ Future<ReaderState> _recalculatePages(
   Future<void> toggleTheme() async {
     final current = state.value;
     if (current == null) return;
-    final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
-    await _repo.saveProgress(updatedProgress);
-    state = AsyncValue.data(current.copyWith(progress: updatedProgress));
+    final size = ref.read(contentSizeProvider);
+    if (size.width == 0 || size.height == 0) return;
+    state = await AsyncValue.guard(() async {
+      final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
+      await _repo.saveProgress(updatedProgress);
+      print('🔄 Пересчёт страниц после toggleTheme');
+      return await _recalculatePages(
+        current.blocks, current.chapters, updatedProgress, size,
+        bookTitle: current.bookTitle, bookAuthor: current.bookAuthor,
+      );
+    });
   }
 
   void toggleProgressFormat() {

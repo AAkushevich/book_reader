@@ -182,7 +182,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
                       child: CustomPaint(
-                        painter: PagePainter(state.pages[index]),
+                        painter: PagePainter(state.pages[index], theme.textColor),
                         size: Size.infinite,
                       ),
                     );
