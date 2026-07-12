@@ -146,7 +146,8 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     String bookAuthor = 'Автор неизвестен',
   }) async {
     final contentWidth = screenSize.width - 40;
-    final contentHeight = screenSize.height - 60 - 5;
+    // ✅ Увеличен отступ снизу: 40 top + 20 bottom + 30 для индикатора страниц
+    final contentHeight = screenSize.height - 60 - 15;
 
     final theme = ReaderThemeData.getByIndex(progress.themeIndex);
     final textColor = theme.textColor;
@@ -242,18 +243,13 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     });
   }
 
+  // ✅ Тема меняет только цвет текста — пересчёт пагинации НЕ нужен
   Future<void> changeTheme(int themeIndex, Size screenSize) async {
     final current = state.value;
     if (current == null) return;
-    state = await AsyncValue.guard(() async {
-      final updatedProgress = current.progress!.updateSettings(themeIndex: themeIndex);
-      await _repo.saveProgress(updatedProgress);
-      print('🔄 Пересчёт страниц после смены темы на индекс $themeIndex');
-      return await _recalculatePages(
-        current.blocks, current.chapters, updatedProgress, screenSize,
-        bookTitle: current.bookTitle, bookAuthor: current.bookAuthor,
-      );
-    });
+    final updatedProgress = current.progress!.updateSettings(themeIndex: themeIndex);
+    await _repo.saveProgress(updatedProgress);
+    state = AsyncValue.data(current.copyWith(progress: updatedProgress));
   }
 
   Future<void> changeFont(int fontIndex, Size screenSize) async {
@@ -273,20 +269,13 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     });
   }
 
+  // ✅ Тема меняет только цвет текста — пересчёт пагинации НЕ нужен
   Future<void> toggleTheme() async {
     final current = state.value;
     if (current == null) return;
-    final size = ref.read(contentSizeProvider);
-    if (size.width == 0 || size.height == 0) return;
-    state = await AsyncValue.guard(() async {
-      final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
-      await _repo.saveProgress(updatedProgress);
-      print('🔄 Пересчёт страниц после toggleTheme');
-      return await _recalculatePages(
-        current.blocks, current.chapters, updatedProgress, size,
-        bookTitle: current.bookTitle, bookAuthor: current.bookAuthor,
-      );
-    });
+    final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
+    await _repo.saveProgress(updatedProgress);
+    state = AsyncValue.data(current.copyWith(progress: updatedProgress));
   }
 
   void toggleProgressFormat() {

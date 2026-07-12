@@ -4,6 +4,7 @@ import 'package:book_reader_app/core/exceptions.dart';
 import 'package:book_reader_app/features/library/domain/entities/book_entry.dart';
 import 'package:book_reader_app/features/library/presentation/providers/book_library_provider.dart';
 import 'package:book_reader_app/features/reader/presentation/pages/reader_screen.dart';
+import 'package:book_reader_app/core/utils/time_ago.dart';
 
 class BookLibraryPage extends ConsumerWidget {
   const BookLibraryPage({super.key});
@@ -13,168 +14,134 @@ class BookLibraryPage extends ConsumerWidget {
     final asyncBooks = ref.watch(bookLibraryProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Моя библиотека'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add),
-            tooltip: 'Добавить книгу',
-            onPressed: () => ref.read(bookLibraryProvider.notifier).pickAndAddBook(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: 'Очистить список',
-            onPressed: asyncBooks.value?.isNotEmpty == true
-                ? () => _showClearDialog(context, ref)
-                : null,
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFFF5F6FA),
       body: asyncBooks.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => _ErrorState(
           error: error,
           onRetry: () => ref.invalidate(bookLibraryProvider),
         ),
-        data: (books) => books.isEmpty
-            ? const _EmptyState()
-            : _BookList(books: books),
-      ),
-    );
-  }
+        data: (books) {
+          final sorted = List<BookEntry>.from(books)..sort((a, b) {
+            if (a.hasBeenRead && b.hasBeenRead) {
+              return b.lastReadAt!.compareTo(a.lastReadAt!);
+            }
+            if (a.hasBeenRead) return -1;
+            if (b.hasBeenRead) return 1;
+            return b.addedAt.compareTo(a.addedAt);
+          });
 
-  void _showClearDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Очистить библиотеку?'),
-        content: const Text('Все книги будут удалены из списка.\nФайлы на устройстве останутся нетронутыми.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
-          FilledButton(
-            onPressed: () {
-              ref.read(bookLibraryProvider.notifier).clearLibrary();
-              Navigator.pop(ctx);
-            },
-            child: const Text('Очистить'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ... (_EmptyState и _ErrorState без изменений) ...
-class _EmptyState extends ConsumerWidget {
-  const _EmptyState();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.library_books, size: 80, color: Theme.of(context).colorScheme.outlineVariant),
-            const SizedBox(height: 16),
-            Text('Библиотека пуста', style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              'Добавьте книги в формате FB2 или EPUB,\nнажав на кнопку выше',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          final recent = sorted.firstWhere(
+            (b) => b.hasBeenRead,
+            orElse: () => BookEntry(
+              id: '',
+              title: '',
+              author: '',
+              filePath: '',
+              fileSizeBytes: 0,
+              extension: '',
+              addedAt: DateTime.now(),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+          );
 
-class _ErrorState extends StatelessWidget {
-  final Object error;
-  final VoidCallback onRetry;
-  const _ErrorState({required this.error, required this.onRetry});
-  @override
-  Widget build(BuildContext context) {
-    final message = switch (error) {
-      AppException e => e.message,
-      _ => 'Произошла непредвиденная ошибка',
-    };
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: Theme.of(context).colorScheme.error),
-            const SizedBox(height: 16),
-            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
-            const SizedBox(height: 24),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Повторить')),
-          ],
-        ),
-      ),
-    );
-  }
-}
+          final hasRecent = recent.filePath.isNotEmpty;
+          final list = hasRecent
+              ? sorted.where((b) => b.filePath != recent.filePath).toList()
+              : sorted;
 
-class _BookList extends StatelessWidget {
-  final List<BookEntry> books;
-  const _BookList({required this.books});
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth > 600;
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: books.length,
-          itemBuilder: (context, index) => _BookTile(book: books[index], isWide: isWide),
-        );
-      },
-    );
-  }
-}
-
-class _BookTile extends ConsumerWidget {
-  final BookEntry book;
-  final bool isWide;
-  const _BookTile({required this.book, required this.isWide});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: _BookCover(book: book), 
-        title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: isWide
-            ? Row(children: [Expanded(child: Text(book.author, overflow: TextOverflow.ellipsis)), Text('${book.formattedSize} • .${book.extension}', style: Theme.of(context).textTheme.labelSmall)])
-            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(book.author, overflow: TextOverflow.ellipsis), Text('${book.formattedSize} • .${book.extension}', style: Theme.of(context).textTheme.labelSmall)]),
-        onLongPress: () => _showDeleteDialog(context, ref),
-        onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ReaderScreen(
-                          filePath: book.filePath,
-                          bookTitle: book.title,      
-                          bookAuthor: book.author,    
+          return CustomScrollView(
+            slivers: [
+              if (hasRecent)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _RecentHeader(
+                    book: recent,
+                    minHeight: 160, // ✅ Увеличено
+                    maxHeight: 260,
+                    onContinue: () => _open(context, ref, recent),
+                  ),
+                ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        hasRecent ? 'Все книги' : 'Библиотека',
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
                         ),
                       ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.search_outlined, color: Colors.black54),
+                            onPressed: () {},
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.sort, color: Colors.black54),
+                            onPressed: () {},
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) => _BookCard(
+                      book: list[i],
+                      onTap: () => _open(context, ref, list[i]),
+                      onDelete: () => _delete(context, ref, list[i]),
                     ),
+                    childCount: list.length,
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+            ],
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => ref.read(bookLibraryProvider.notifier).pickAndAddBook(),
+        backgroundColor: const Color(0xFFFF4081),
+        child: const Icon(Icons.add, size: 30),
       ),
     );
   }
 
-  void _showDeleteDialog(BuildContext context, WidgetRef ref) {
+  void _open(BuildContext context, WidgetRef ref, BookEntry book) {
+    ref.read(bookLibraryProvider.notifier).markAsRead(book.filePath);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          filePath: book.filePath,
+          bookTitle: book.title,
+          bookAuthor: book.author,
+        ),
+      ),
+    );
+  }
+
+  void _delete(BuildContext context, WidgetRef ref, BookEntry book) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Удалить книгу?'),
-        content: Text('«${book.title}» будет удалена из списка.\nФайл останется на устройстве.'),
+        content: Text('«${book.title}» будет удалена из списка.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
           FilledButton(
             onPressed: () {
               ref.read(bookLibraryProvider.notifier).removeBook(book.filePath);
@@ -188,37 +155,298 @@ class _BookTile extends ConsumerWidget {
   }
 }
 
-class _BookCover extends StatelessWidget {
+class _RecentHeader extends SliverPersistentHeaderDelegate {
   final BookEntry book;
-  const _BookCover({required this.book});
+  final double minHeight;
+  final double maxHeight;
+  final VoidCallback onContinue;
+
+  _RecentHeader({
+    required this.book,
+    required this.minHeight,
+    required this.maxHeight,
+    required this.onContinue,
+  });
+
+  @override
+  double get minExtent => minHeight;
+
+  @override
+  double get maxExtent => maxHeight;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    final ratio = (shrinkOffset / (maxExtent - minExtent)).clamp(0.0, 1.0);
+    final currentHeight = maxExtent - shrinkOffset;
+    final expandProgress = 1.0 - ratio;
+
+    return SizedBox(
+      height: maxExtent,
+      width: double.infinity,
+      child: ClipRect(
+        child: SizedBox(
+          height: currentHeight,
+          child: Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFFF5E62), Color(0xFFFF9966)],
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: 16,
+                    top: 16,
+                    bottom: 16,
+                    width: 110,
+                    child: Opacity(
+                      opacity: expandProgress,
+                      child: Transform.scale(
+                        scale: 0.7 + 0.3 * expandProgress,
+                        alignment: Alignment.centerLeft,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            color: Colors.white.withOpacity(0.2),
+                            child: const Icon(Icons.book, color: Colors.white38, size: 40),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 16 + 126 * expandProgress,
+                    right: 16,
+                    top: 16,
+                    bottom: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Opacity(
+                          opacity: (expandProgress * 2 - 1).clamp(0.0, 1.0),
+                          child: Text(
+                            formatTimeAgo(book.lastReadAt).toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          book.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16 + 6 * expandProgress,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Opacity(
+                          opacity: (expandProgress * 2 - 1).clamp(0.0, 1.0),
+                          child: Text(
+                            book.author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${book.progressPercent}%',
+                                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(2),
+                                    child: LinearProgressIndicator(
+                                      value: book.readingProgress,
+                                      backgroundColor: Colors.white24,
+                                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                      minHeight: 3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            GestureDetector(
+                              onTap: onContinue,
+                              child: const Text(
+                                'ПРОДОЛЖИТЬ >',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) => true;
+}
+
+class _BookCard extends StatelessWidget {
+  final BookEntry book;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  const _BookCard({
+    required this.book,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // V1: обложка не сохраняется в БД, поэтому показываем заглушку
-    // Для демонстрации можно раскомментировать код ниже, когда парсер вернёт coverImage
-    /*
-    if (book.coverImage != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.memory(book.coverImage!, width: 48, height: 64, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _Placeholder()),
-      );
-    }
-    */
-    return _Placeholder();
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onDelete,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Container(
+                width: 60,
+                height: 85,
+                color: Colors.grey[200],
+                child: const Icon(Icons.book, color: Colors.grey, size: 24),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    book.title,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    book.author,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${book.formattedSize} • .${book.extension.toUpperCase()}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey[500]),
+                  ),
+                  if (book.hasBeenRead) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      formatTimeAgo(book.lastReadAt),
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    ),
+                  ],
+                  if (book.readingProgress > 0) ...[
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: book.readingProgress,
+                        backgroundColor: Colors.grey[200],
+                        valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                        minHeight: 2,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-class _Placeholder extends StatelessWidget {
+class _ErrorState extends StatelessWidget {
+  final Object error;
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.error, required this.onRetry});
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 64,
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
+    final msg = switch (error) {
+      AppException e => e.message,
+      _ => 'Произошла ошибка',
+    };
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 16),
+            Text(msg, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Повторить'),
+            ),
+          ],
+        ),
       ),
-      child: Icon(Icons.book, color: Theme.of(context).colorScheme.primary),
     );
   }
 }

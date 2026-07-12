@@ -10,6 +10,9 @@ class BookEntry extends Equatable {
   final String extension;
   final DateTime addedAt;
 
+  final DateTime? lastReadAt;      // null = книга ещё не открывалась
+  final double readingProgress;    // 0.0 ... 1.0
+
   const BookEntry({
     required this.id,
     required this.title,
@@ -18,6 +21,8 @@ class BookEntry extends Equatable {
     required this.fileSizeBytes,
     required this.extension,
     required this.addedAt,
+    this.lastReadAt,
+    this.readingProgress = 0.0,
   });
 
   /// Форматированный размер для UI
@@ -27,6 +32,71 @@ class BookEntry extends Equatable {
     return '${(fileSizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  bool get hasBeenRead => lastReadAt != null;
+
+  int get progressPercent => (readingProgress * 100).round();
+
+  BookEntry markAsReadNow({double? newProgress}) {
+    return BookEntry(
+      id: id,
+      title: title,
+      author: author,
+      filePath: filePath,
+      fileSizeBytes: fileSizeBytes,
+      extension: extension,
+      addedAt: addedAt,
+      lastReadAt: DateTime.now(),
+      readingProgress: newProgress ?? readingProgress,
+    );
+  }
+
+  BookEntry withProgress(double newProgress) {
+    return BookEntry(
+      id: id,
+      title: title,
+      author: author,
+      filePath: filePath,
+      fileSizeBytes: fileSizeBytes,
+      extension: extension,
+      addedAt: addedAt,
+      lastReadAt: lastReadAt,
+      readingProgress: newProgress.clamp(0.0, 1.0),
+    );
+  }
+
+  BookEntry copyWith({
+    String? title,
+    String? author,
+    String? filePath,
+    int? fileSizeBytes,
+    String? extension,
+    DateTime? addedAt,
+    DateTime? lastReadAt,
+    double? readingProgress,
+  }) {
+    return BookEntry(
+      id: id,
+      title: title ?? this.title,
+      author: author ?? this.author,
+      filePath: filePath ?? this.filePath,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      extension: extension ?? this.extension,
+      addedAt: addedAt ?? this.addedAt,
+      lastReadAt: lastReadAt ?? this.lastReadAt,
+      readingProgress: readingProgress ?? this.readingProgress,
+    );
+  }
+
   @override
-  List<Object?> get props => [id, title, author, filePath, fileSizeBytes, extension, addedAt];
+  List<Object?> get props => [
+        id,
+        title,
+        author,
+        filePath,
+        fileSizeBytes,
+        extension,
+        addedAt,
+        lastReadAt,
+        readingProgress,
+      ];
 }

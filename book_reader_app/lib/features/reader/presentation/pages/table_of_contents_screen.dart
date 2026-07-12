@@ -7,7 +7,7 @@ class TableOfContentsScreen extends StatelessWidget {
   final String bookAuthor;
   final List<Chapter> chapters;
   final int currentPageIndex;
-  final List<PageLayout> pages; // <-- теперь нужен pages
+  final List<PageLayout> pages;
   final ValueChanged<int> onChapterTap;
 
   const TableOfContentsScreen({
@@ -44,7 +44,6 @@ class TableOfContentsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 16),
         children: [
-          // Название книги и автор
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
@@ -74,23 +73,14 @@ class TableOfContentsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Text(
-                  '1',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontSize: 14,
-                  ),
-                ),
               ],
             ),
           ),
           const Divider(height: 1, color: Color(0xFF2A2A4A)),
-
-          // Главы
           ...chapters.asMap().entries.map((entry) {
             final chapterIndex = entry.key;
             final chapter = entry.value;
-            final pageForChapter = _findPageForChapter(chapterIndex);
+            final pageForChapter = _findPageForChapter(chapter.blockIndex);
             final isCurrentChapter = pageForChapter == currentPageIndex;
             final isSubChapter = _isSubChapter(chapter.title);
 
@@ -108,7 +98,9 @@ class TableOfContentsScreen extends StatelessWidget {
                   bottom: 16,
                 ),
                 decoration: BoxDecoration(
-                  color: isCurrentChapter ? const Color(0xFF252547) : Colors.transparent,
+                  color: isCurrentChapter
+                      ? const Color(0xFF252547)
+                      : Colors.transparent,
                 ),
                 child: Row(
                   children: [
@@ -116,9 +108,13 @@ class TableOfContentsScreen extends StatelessWidget {
                       child: Text(
                         chapter.title,
                         style: TextStyle(
-                          color: isCurrentChapter ? const Color(0xFF6C63FF) : Colors.white,
+                          color: isCurrentChapter
+                              ? const Color(0xFF6C63FF)
+                              : Colors.white,
                           fontSize: 16,
-                          fontWeight: isCurrentChapter ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: isCurrentChapter
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                     ),
@@ -126,7 +122,9 @@ class TableOfContentsScreen extends StatelessWidget {
                       Text(
                         '${pageForChapter + 1}',
                         style: TextStyle(
-                          color: isCurrentChapter ? const Color(0xFF6C63FF) : Colors.grey,
+                          color: isCurrentChapter
+                              ? const Color(0xFF6C63FF)
+                              : Colors.grey,
                           fontSize: 14,
                         ),
                       ),
@@ -140,10 +138,18 @@ class TableOfContentsScreen extends StatelessWidget {
     );
   }
 
-  /// Ищем первую страницу, у которой chapterIndex совпадает с заданным.
-  int? _findPageForChapter(int chapterIndex) {
+  /// ✅ Ищем страницу по blockIndex главы, а не по chapterIndex
+  /// Это гарантирует переход именно на страницу с заголовком главы
+  int? _findPageForChapter(int blockIndex) {
     for (int i = 0; i < pages.length; i++) {
-      if (pages[i].chapterIndex == chapterIndex) {
+      if (pages[i].startBlockIndex == blockIndex) {
+        return i;
+      }
+    }
+    // Fallback: если точное совпадение не найдено,
+    // ищем ближайшую страницу с startBlockIndex >= blockIndex
+    for (int i = 0; i < pages.length; i++) {
+      if (pages[i].startBlockIndex >= blockIndex) {
         return i;
       }
     }

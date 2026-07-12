@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
-import 'package:sembast/sembast.dart'; 
+import 'package:sembast/sembast.dart';
 import 'package:book_reader_app/core/exceptions.dart';
 import 'package:book_reader_app/core/database/app_database.dart';
 import 'package:book_reader_app/features/library/domain/entities/book_entry.dart';
@@ -43,7 +43,20 @@ class BookLibraryRepositoryImpl implements BookLibraryRepository {
   @override
   Future<List<BookEntry>> getAllBooks() async {
     final records = await _db.books.find(_db.db);
-    return records.map((record) => _fromJson(record.value)).toList();
+    final books = records.map((record) => _fromJson(record.value)).toList();
+    
+    // ✅ Сортировка: сначала прочитанные (по lastReadAt, новые сверху),
+    // затем непрочитанные (по addedAt, новые сверху)
+    books.sort((a, b) {
+      if (a.hasBeenRead && b.hasBeenRead) {
+        return b.lastReadAt!.compareTo(a.lastReadAt!);
+      }
+      if (a.hasBeenRead) return -1;
+      if (b.hasBeenRead) return 1;
+      return b.addedAt.compareTo(a.addedAt);
+    });
+    
+    return books;
   }
 
   @override
@@ -56,6 +69,30 @@ class BookLibraryRepositoryImpl implements BookLibraryRepository {
     await _db.books.delete(_db.db);
   }
 
+  // ✅ НОВЫЕ МЕТОДЫ: обновление времени чтения и прогресса
+  
+  @override
+  Future<void> updateLastRead(String filePath) async {
+    final record = _db.books.record(filePath);
+    final json = await record.get(_db.db);
+    if (json == null) return;
+    
+    final book = _fromJson(json);
+    final updated = book.markAsReadNow();
+    await record.put(_db.db, _toJson(updated));
+  }
+
+  @override
+  Future<void> updateProgress(String filePath, double progress) async {
+    final record = _db.books.record(filePath);
+    final json = await record.get(_db.db);
+    if (json == null) return;
+    
+    final book = _fromJson(json);
+    final updated = book.withProgress(progress);
+    await record.put(_db.db, _toJson(updated));
+  }
+
   // === Сериализация ===
 
   Map<String, dynamic> _toJson(BookEntry book) => {
@@ -66,6 +103,9 @@ class BookLibraryRepositoryImpl implements BookLibraryRepository {
     'fileSizeBytes': book.fileSizeBytes,
     'extension': book.extension,
     'addedAtMs': book.addedAt.millisecondsSinceEpoch,
+    // ✅ Новые поля
+    'lastReadAtMs': book.lastReadAt?.millisecondsSinceEpoch,
+    'readingProgress': book.readingProgress,
   };
 
   BookEntry _fromJson(Map<String, dynamic> json) => BookEntry(
@@ -76,5 +116,10 @@ class BookLibraryRepositoryImpl implements BookLibraryRepository {
     fileSizeBytes: json['fileSizeBytes'] as int,
     extension: json['extension'] as String,
     addedAt: DateTime.fromMillisecondsSinceEpoch(json['addedAtMs'] as int),
+    // ✅ Обратная совместимость: если поля нет — null / 0.0
+    lastReadAt: json['lastReadAtMs'] != null
+        ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
+        : null,
+    readingProgress: (json['readingProgress'] as num?)?.toDouble() ?? 0.0,
   );
 }

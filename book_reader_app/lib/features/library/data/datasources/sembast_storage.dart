@@ -17,11 +17,21 @@ class SembastBookStorage {
   }
 
   Future<List<BookEntry>> getAll() async {
-    final records = await _store.find(_db, finder: Finder(sortOrders: [
-      // ascending: false = сортировка по убыванию (новые записи сверху)
-      SortOrder('addedAtMs', false),
-    ]));
-    return records.map((r) => _fromJson(r.value)).toList();
+    final records = await _store.find(_db);
+    final books = records.map((r) => _fromJson(r.value)).toList();
+    
+    // ✅ Сортировка: сначала прочитанные (по lastReadAt, новые сверху),
+    // затем непрочитанные (по addedAt, новые сверху)
+    books.sort((a, b) {
+      if (a.hasBeenRead && b.hasBeenRead) {
+        return b.lastReadAt!.compareTo(a.lastReadAt!);
+      }
+      if (a.hasBeenRead) return -1;
+      if (b.hasBeenRead) return 1;
+      return b.addedAt.compareTo(a.addedAt);
+    });
+    
+    return books;
   }
 
   Future<void> remove(String filePath) async {
@@ -40,6 +50,8 @@ class SembastBookStorage {
     'fileSizeBytes': book.fileSizeBytes,
     'extension': book.extension,
     'addedAtMs': book.addedAt.millisecondsSinceEpoch,
+    'lastReadAtMs': book.lastReadAt?.millisecondsSinceEpoch,
+    'readingProgress': book.readingProgress,
   };
 
   BookEntry _fromJson(Map<String, dynamic> json) => BookEntry(
@@ -50,5 +62,9 @@ class SembastBookStorage {
     fileSizeBytes: json['fileSizeBytes'] as int,
     extension: json['extension'] as String,
     addedAt: DateTime.fromMillisecondsSinceEpoch(json['addedAtMs'] as int),
+    lastReadAt: json['lastReadAtMs'] != null
+        ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
+        : null,
+    readingProgress: (json['readingProgress'] as num?)?.toDouble() ?? 0.0,
   );
 }
