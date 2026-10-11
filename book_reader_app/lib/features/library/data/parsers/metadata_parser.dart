@@ -64,30 +64,65 @@ BookMetadata _parseFb2Content(String content) {
       ? '${authorEl.findAllElements('first-name').firstOrNull?.innerText ?? ''} ${authorEl.findAllElements('last-name').firstOrNull?.innerText ?? ''}'.trim()
       : '';
 
-  // Извлечение обложки для FB2 (безопасный поиск)
-  Uint8List? coverImage;
-  final coverPage = doc.findAllElements('coverpage').firstOrNull;
-  final coverHref = coverPage?.findAllElements('image').firstOrNull?.getAttribute('href');
   
-  if (coverHref != null) {
-    final imageId = coverHref.replaceFirst('#', '');
-    //  Безопасный поиск вместо firstWhere + orElse: () => null
-    final binary = doc.findAllElements('binary').firstWhereOrNull((el) => el.getAttribute('id') == imageId);
-    
-    if (binary != null) {
-      final base64 = binary.innerText.replaceAll('\n', '').replaceAll('\r', '');
-      try {
-        coverImage = base64Decode(base64);
-      } catch (_) {
-        // Игнорируем ошибки декодирования
+
+  final coverPage = doc.findAllElements('coverpage').firstOrNull;
+  
+  if (coverPage != null) {
+    final images = coverPage.findAllElements('image');
+    for (final img in images) {
+      final href = img.getAttribute('href') ?? img.getAttribute('l:href');
+      if (href != null) {
+        final imageId = href.replaceFirst('#', '');
+        final binaries = doc.findAllElements('binary');
+        for (final bin in binaries) {
+          final binId = bin.getAttribute('id');
+          if (binId == imageId) {           
+            final base64 = bin.innerText.replaceAll('\n', '').replaceAll('\r', '');           
+            try {
+              final coverImage = base64Decode(base64);
+              return BookMetadata(
+                title: title.isEmpty ? 'Без названия' : title,
+                author: author.isEmpty ? 'Неизвестный автор' : author,
+                coverImage: coverImage,
+              );
+            } catch (e) {
+              print('❌ Base64 decode error: $e');
+            }
+          }
+        }
       }
     }
   }
 
+
+  final allBinaries = doc.findAllElements('binary');
+  for (final bin in allBinaries) {
+    final contentType = bin.getAttribute('content-type');
+    if (contentType != null && contentType.startsWith('image/')) {
+      
+      final base64 = bin.innerText.replaceAll('\n', '').replaceAll('\r', '');
+      try {
+        final coverImage = base64Decode(base64);
+       
+        
+        return BookMetadata(
+          title: title.isEmpty ? 'Без названия' : title,
+          author: author.isEmpty ? 'Неизвестный автор' : author,
+          coverImage: coverImage,
+        );
+      } catch (e) {
+        print('❌ Base64 decode error: $e');
+      }
+    }
+  }
+
+ 
+  
   return BookMetadata(
     title: title.isEmpty ? 'Без названия' : title,
     author: author.isEmpty ? 'Неизвестный автор' : author,
-    coverImage: coverImage,
+    coverImage: null,
   );
 }
 

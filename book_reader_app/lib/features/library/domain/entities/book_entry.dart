@@ -12,6 +12,7 @@ class BookEntry extends Equatable {
 
   final DateTime? lastReadAt;      // null = книга ещё не открывалась
   final double readingProgress;    // 0.0 ... 1.0
+  final String? coverImagePath;    // Путь к файлу обложки (null если нет)
 
   const BookEntry({
     required this.id,
@@ -23,6 +24,7 @@ class BookEntry extends Equatable {
     required this.addedAt,
     this.lastReadAt,
     this.readingProgress = 0.0,
+    this.coverImagePath,
   });
 
   /// Форматированный размер для UI
@@ -47,6 +49,7 @@ class BookEntry extends Equatable {
       addedAt: addedAt,
       lastReadAt: DateTime.now(),
       readingProgress: newProgress ?? readingProgress,
+      coverImagePath: coverImagePath,
     );
   }
 
@@ -61,6 +64,7 @@ class BookEntry extends Equatable {
       addedAt: addedAt,
       lastReadAt: lastReadAt,
       readingProgress: newProgress.clamp(0.0, 1.0),
+      coverImagePath: coverImagePath,
     );
   }
 
@@ -73,6 +77,7 @@ class BookEntry extends Equatable {
     DateTime? addedAt,
     DateTime? lastReadAt,
     double? readingProgress,
+    String? coverImagePath,
   }) {
     return BookEntry(
       id: id,
@@ -84,6 +89,7 @@ class BookEntry extends Equatable {
       addedAt: addedAt ?? this.addedAt,
       lastReadAt: lastReadAt ?? this.lastReadAt,
       readingProgress: readingProgress ?? this.readingProgress,
+      coverImagePath: coverImagePath ?? this.coverImagePath,
     );
   }
 
@@ -98,5 +104,6 @@ class BookEntry extends Equatable {
         addedAt,
         lastReadAt,
         readingProgress,
+        coverImagePath,
       ];
 }

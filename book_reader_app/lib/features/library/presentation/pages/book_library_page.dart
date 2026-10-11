@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/core/exceptions.dart';
@@ -56,7 +57,7 @@ class BookLibraryPage extends ConsumerWidget {
                   pinned: true,
                   delegate: _RecentHeader(
                     book: recent,
-                    minHeight: 160, // ✅ Увеличено
+                    minHeight: 160,
                     maxHeight: 260,
                     onContinue: () => _open(context, ref, recent),
                   ),
@@ -198,6 +199,7 @@ class _RecentHeader extends SliverPersistentHeaderDelegate {
               bottom: false,
               child: Stack(
                 children: [
+                  // ✅ Обложка: файл или заглушка
                   Positioned(
                     left: 16,
                     top: 16,
@@ -210,9 +212,13 @@ class _RecentHeader extends SliverPersistentHeaderDelegate {
                         alignment: Alignment.centerLeft,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            color: Colors.white.withOpacity(0.2),
-                            child: const Icon(Icons.book, color: Colors.white38, size: 40),
+                          child: _buildCoverImage(
+                            book.coverImagePath,
+                            width: 110,
+                            height: double.infinity,
+                            placeholderColor: Colors.white.withOpacity(0.2),
+                            placeholderIcon: Icons.book,
+                            placeholderIconColor: Colors.white38,
                           ),
                         ),
                       ),
@@ -348,13 +354,16 @@ class _BookCard extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ✅ Обложка: файл или заглушка
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: Container(
+              child: _buildCoverImage(
+                book.coverImagePath,
                 width: 60,
                 height: 85,
-                color: Colors.grey[200],
-                child: const Icon(Icons.book, color: Colors.grey, size: 24),
+                placeholderColor: Colors.grey[200],
+                placeholderIcon: Icons.book,
+                placeholderIconColor: Colors.grey,
               ),
             ),
             const SizedBox(width: 14),
@@ -415,6 +424,38 @@ class _BookCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// ✅ Общий виджет обложки: показывает файл или заглушку
+Widget _buildCoverImage(
+  String? coverImagePath, {
+  required double width,
+  required double height,
+  required Color? placeholderColor,
+  required IconData placeholderIcon,
+  required Color placeholderIconColor,
+}) {
+  if (coverImagePath != null) {
+    final file = File(coverImagePath);
+    return Image.file(
+      file,
+      width: width,
+      height: height,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => Container(
+        width: width,
+        height: height,
+        color: placeholderColor,
+        child: Icon(placeholderIcon, color: placeholderIconColor, size: 24),
+      ),
+    );
+  }
+  return Container(
+    width: width,
+    height: height,
+    color: placeholderColor,
+    child: Icon(placeholderIcon, color: placeholderIconColor, size: 24),
+  );
 }
 
 class _ErrorState extends StatelessWidget {

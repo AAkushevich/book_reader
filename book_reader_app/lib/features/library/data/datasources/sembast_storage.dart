@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:sembast/sembast_io.dart';
 import 'package:book_reader_app/features/library/domain/entities/book_entry.dart';
@@ -20,8 +21,6 @@ class SembastBookStorage {
     final records = await _store.find(_db);
     final books = records.map((r) => _fromJson(r.value)).toList();
     
-    // ✅ Сортировка: сначала прочитанные (по lastReadAt, новые сверху),
-    // затем непрочитанные (по addedAt, новые сверху)
     books.sort((a, b) {
       if (a.hasBeenRead && b.hasBeenRead) {
         return b.lastReadAt!.compareTo(a.lastReadAt!);
@@ -35,10 +34,34 @@ class SembastBookStorage {
   }
 
   Future<void> remove(String filePath) async {
-    await _store.record(filePath).delete(_db);
+    // Удаляем файл обложки
+    final record = _store.record(filePath);
+    final json = await record.get(_db);
+    if (json != null) {
+      final book = _fromJson(json);
+      if (book.coverImagePath != null) {
+        final coverFile = File(book.coverImagePath!);
+        if (await coverFile.exists()) {
+          await coverFile.delete();
+        }
+      }
+    }
+    
+    await record.delete(_db);
   }
 
   Future<void> clear() async {
+    // Удаляем все файлы обложек
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final coverDir = Directory('${dir.path}/covers');
+      if (await coverDir.exists()) {
+        await coverDir.delete(recursive: true);
+      }
+    } catch (e) {
+      // Игнорируем
+    }
+    
     await _store.delete(_db);
   }
 
@@ -52,6 +75,7 @@ class SembastBookStorage {
     'addedAtMs': book.addedAt.millisecondsSinceEpoch,
     'lastReadAtMs': book.lastReadAt?.millisecondsSinceEpoch,
     'readingProgress': book.readingProgress,
+    'coverImagePath': book.coverImagePath,
   };
 
   BookEntry _fromJson(Map<String, dynamic> json) => BookEntry(
@@ -66,5 +90,6 @@ class SembastBookStorage {
         ? DateTime.fromMillisecondsSinceEpoch(json['lastReadAtMs'] as int)
         : null,
     readingProgress: (json['readingProgress'] as num?)?.toDouble() ?? 0.0,
+    coverImagePath: json['coverImagePath'] as String?,
   );
 }
