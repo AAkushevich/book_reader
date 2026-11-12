@@ -78,7 +78,7 @@ class TableOfContentsScreen extends StatelessWidget {
           ),
           const Divider(height: 1, color: Color(0xFF2A2A4A)),
           ...chapters.asMap().entries.map((entry) {
-            final chapterIndex = entry.key;
+            //final chapterIndex = entry.key;
             final chapter = entry.value;
             final pageForChapter = _findPageForChapter(chapter.blockIndex);
             final isCurrentChapter = pageForChapter == currentPageIndex;

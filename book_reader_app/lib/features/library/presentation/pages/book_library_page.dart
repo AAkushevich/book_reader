@@ -216,7 +216,7 @@ class _RecentHeader extends SliverPersistentHeaderDelegate {
                             book.coverImagePath,
                             width: 110,
                             height: double.infinity,
-                            placeholderColor: Colors.white.withOpacity(0.2),
+                            placeholderColor: Colors.white.withValues(alpha: 0.2),
                             placeholderIcon: Icons.book,
                             placeholderIconColor: Colors.white38,
                           ),

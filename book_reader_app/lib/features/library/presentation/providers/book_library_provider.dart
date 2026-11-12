@@ -25,15 +25,18 @@ class BookLibraryNotifier extends _$BookLibraryNotifier {
 
   Future<void> pickAndAddBook() async {
     state = await AsyncValue.guard(() async {
-      final result = await FilePicker.pickFiles(
+      final picked = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['fb2', 'zip', 'epub'],
         dialogTitle: 'Выберите книгу',
       );
-      if (result == null || result.files.single.path == null) {
+
+      final file = picked.firstOrNull; // or picked?.single, but single throws if >1
+      if (file == null || file.path == null) {
         return await _repo.getAllBooks();
       }
-      await _repo.addBookFromPath(result.files.single.path!);
+
+      await _repo.addBookFromPath(file.path!);
       return await _repo.getAllBooks();
     });
   }

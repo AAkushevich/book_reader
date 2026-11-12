@@ -9,7 +9,7 @@ import 'package:book_reader_app/features/reader/domain/entities/book_block.dart'
 
 class EpubParser implements BookParser {
   @override
-  Future<BookContent> parseBytes(Uint8List bytes) async {
+  Future<BookContent> parseBytes(Uint8List bytes, {String? filePath}) async {
     final archive = ZipDecoder().decodeBytes(bytes);
     final blocks = <BookBlock>[];
     final chapters = <Chapter>[];

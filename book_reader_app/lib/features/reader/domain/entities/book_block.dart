@@ -10,17 +10,28 @@ enum BlockType {
 /// Один смысловой блок текста
 class BookBlock {
   final BlockType type;
-  final String text; 
-  
-  /// Атрибуты для EPUB/FB2 (CSS-классы, ID ссылок и т.д.)
-  /// Пример: {'class': 'epigraph', 'id': 'note1'}
+  final String text;
   final Map<String, String>? attributes;
+
+  final String? imagePath;    // абсолютный путь к файлу на диске
+  final int? imageWidth;      // исходные размеры (px) — нужны пагинатору
+  final int? imageHeight;
 
   const BookBlock({
     required this.type,
-    required this.text,
+    this.text = '',
     this.attributes,
+    this.imagePath,
+    this.imageWidth,
+    this.imageHeight,
   });
+
+  factory BookBlock.image(String path, {int? width, int? height}) => BookBlock(
+    type: BlockType.image,
+    imagePath: path,
+    imageWidth: width,
+    imageHeight: height,
+  );
 
   factory BookBlock.paragraph(String text, {Map<String, String>? attrs}) => 
       BookBlock(type: BlockType.paragraph, text: text, attributes: attrs);
