@@ -3,15 +3,9 @@ import 'package:collection/collection.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
 
-/// Размеры картинки в пикселях.
 typedef ImageSize = ({int width, int height});
 
 class Fb2XmlParser {
-  /// [imagePaths] — id binary → абсолютный путь к распакованному файлу.
-  /// [imageSizes] — id binary → исходные размеры в px (нужны пагинатору).
-  ///
-  /// Оба аргумента опциональны: если их не передать, парсер работает
-  /// как раньше и просто пропускает <image>.
   static BookContent parse(
       String xmlContent, {
         Map<String, String> imagePaths = const {},
@@ -38,7 +32,7 @@ class Fb2XmlParser {
       if (child is! XmlElement) continue;
       switch (child.name.local) {
         case 'title':
-          final t = child.innerText.trim();
+          final t = _normalize(child.innerText);
           if (t.isNotEmpty) {
             blocks.add(BookBlock.title(t));
             chapters.add(Chapter(
@@ -49,15 +43,15 @@ class Fb2XmlParser {
           }
           break;
         case 'subtitle':
-          final t = child.innerText.trim();
+          final t = _normalize(child.innerText);
           if (t.isNotEmpty) blocks.add(BookBlock.title(t));
           break;
         case 'p':
-          final t = child.innerText.trim();
+          final t = _normalize(child.innerText);
           if (t.isNotEmpty) blocks.add(BookBlock.paragraph(t));
           break;
         case 'epigraph':
-          final t = child.innerText.trim();
+          final t = _normalize(child.innerText);
           if (t.isNotEmpty) blocks.add(BookBlock.epigraph(t));
           break;
         case 'empty-line':
@@ -76,8 +70,6 @@ class Fb2XmlParser {
                 height: size?.height,
               ));
             }
-            // если path == null (например, картинку не нашли в <binary>) —
-            // молча пропускаем, не ломая текст
           }
           break;
         case 'section':
@@ -90,9 +82,31 @@ class Fb2XmlParser {
     }
   }
 
-  /// В FB2 атрибут href лежит в XLink-неймспейсе, но в зависимости от
-  /// того как парсер распознал namespace в конкретном файле, читается
-  /// по-разному. Пробуем все три варианта.
+  /// Приводит все типографские пробелы к обычному, убирает soft hyphen,
+  /// схлопывает множественные пробелы, переводы строк внутри блока → пробел.
+  static String _normalize(String s) {
+    return s
+        .replaceAll('\u00A0', ' ')   // NBSP — основной виновник «двойных»
+        .replaceAll('\u2007', ' ')   // figure space
+        .replaceAll('\u202F', ' ')   // narrow NBSP
+        .replaceAll('\u2009', ' ')   // thin space
+        .replaceAll('\u200A', ' ')   // hair space
+        .replaceAll('\u2008', ' ')   // punctuation space
+        .replaceAll('\u2006', ' ')
+        .replaceAll('\u2005', ' ')
+        .replaceAll('\u2004', ' ')
+        .replaceAll('\u2003', ' ')   // em space
+        .replaceAll('\u2002', ' ')   // en space
+        .replaceAll('\u2001', ' ')
+        .replaceAll('\u2000', ' ')
+        .replaceAll('\u200B', '')    // zero-width space
+        .replaceAll('\u00AD', '')    // soft hyphen
+        .replaceAll('\t', ' ')
+        .replaceAll(RegExp(r'[ ]*\n[ ]*'), ' ')  // переносы → пробел
+        .replaceAll(RegExp(r' +'), ' ')          // схлопнуть множественные
+        .trim();
+  }
+
   static String? _getHref(XmlElement el) {
     const xlink = 'http://www.w3.org/1999/xlink';
     return el.getAttribute('href', namespace: xlink)

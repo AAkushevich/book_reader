@@ -12,7 +12,7 @@ dependencies:
 
   flutter_riverpod: ^3.0.3
   riverpod_annotation: ^3.0.3
-  
+
   # Parsing
   xml: ^6.5.0
   archive: ^3.6.1
@@ -26,6 +26,7 @@ dependencies:
   equatable: ^2.0.7
   logger: ^2.6.2
   collection: ^1.19.1
+  hyphenation: ^1.0.2
 
 dev_dependencies:
   flutter_test:
@@ -35,6 +36,8 @@ dev_dependencies:
   riverpod_generator: ^3.0.3
 
 flutter:
+  assets:
+    - assets/patterns/hyph-ru.tex
   uses-material-design: true
   
   fonts:

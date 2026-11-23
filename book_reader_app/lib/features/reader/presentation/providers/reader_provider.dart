@@ -10,7 +10,7 @@ import 'package:book_reader_app/features/reader/domain/entities/reading_progress
 import 'package:book_reader_app/features/reader/domain/repositories/reader_repository.dart';
 import 'package:book_reader_app/features/reader/data/repositories/reader_repository_impl.dart';
 import 'package:book_reader_app/features/reader/data/parsers/text_paginator.dart';
-
+import 'package:book_reader_app/features/reader/data/parsers/hyphenator_provider.dart';
 // ---------- Базовые провайдеры ----------
 final appDatabaseProvider = Provider<AppDatabase>((ref) => throw UnimplementedError());
 
@@ -157,8 +157,9 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       fontFamily: progress.fontFamily,
       height: progress.lineHeight,
       color: textColor,
-      wordSpacing: 1.2,
     );
+
+    final hyphenator = await HyphenatorProvider.instance();
 
     final config = PaginatorConfig(
       contentWidth: contentWidth,
@@ -177,6 +178,7 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
         color: textColor.withOpacity(0.7),
       ),
       firstLineIndent: progress.fontSize * 1.5,
+      hyphenator: hyphenator,
     );
 
     final paginator = TextPaginator();

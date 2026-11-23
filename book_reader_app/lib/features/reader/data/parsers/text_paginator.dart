@@ -24,16 +24,19 @@ class PaginatorConfig {
   });
 }
 
+/// Контракт для движка переносов.
+/// Возвращает список индексов, где можно разорвать слово.
+/// Пример: "библиотека" → [2, 5, 8] → би-блио-те-ка
 abstract class Hyphenator {
-  int? hyphenate(String word);
+  List<int> breakPositions(String word);
 }
 
 class TextPaginator {
   Future<List<PageLayout>> paginate(
-    List<BookBlock> blocks,
-    List<Chapter> chapters,
-    PaginatorConfig config,
-  ) async {
+      List<BookBlock> blocks,
+      List<Chapter> chapters,
+      PaginatorConfig config,
+      ) async {
     final sw = Stopwatch()..start();
     print('⏱️ Начало пагинации: ${blocks.length} блоков');
     final result = _paginateImpl(blocks, chapters, config);
@@ -42,15 +45,14 @@ class TextPaginator {
   }
 
   List<PageLayout> _paginateImpl(
-    List<BookBlock> blocks,
-    List<Chapter> chapters,
-    PaginatorConfig config,
-  ) {
+      List<BookBlock> blocks,
+      List<Chapter> chapters,
+      PaginatorConfig config,
+      ) {
     final pages = <PageLayout>[];
     var currentLines = <RenderedLine>[];
     double currentY = 0.0;
     int currentChapterIdx = 0;
-    // ✅ Индекс первого блока на ТЕКУЩЕЙ странице
     int pageStartBlockIndex = 0;
 
     final double normalLineHeight =
@@ -68,12 +70,10 @@ class TextPaginator {
       // --- ЗАГОЛОВОК ---
       if (block.type == BlockType.title) {
         if (currentY > 0) {
-          // ✅ Сохраняем предыдущую страницу с ЕЁ startBlockIndex
           pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
           currentLines = [];
           currentY = 0.0;
         }
-        // ✅ Новая страница начинается с этого блока (заголовка)
         pageStartBlockIndex = i;
 
         tp.text = TextSpan(text: block.text, style: config.titleStyle);
@@ -87,8 +87,6 @@ class TextPaginator {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
           currentLines = [];
           currentY = topSpacing;
-          // Если заголовок не влез и ушёл на новую страницу,
-          // pageStartBlockIndex остаётся = i (заголовок)
         }
 
         final titleCenterOffset = tp.width < config.contentWidth
@@ -118,7 +116,6 @@ class TextPaginator {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
           currentLines = [];
           currentY = 0.0;
-          // ✅ Новая страница начинается с эпиграфа
           pageStartBlockIndex = i;
         }
 
@@ -161,14 +158,86 @@ class TextPaginator {
       }
 
       // --- ПАРАГРАФ ---
-      String remainingText = block.text;
+      // Пре-процессинг: вставляем \u00AD в местах возможных переносов
+      String remainingText = config.hyphenator != null
+          ? _insertSoftHyphens(block.text, config.hyphenator!)
+          : block.text;
       bool isFirstLineOfBlock = true;
 
       while (remainingText.isNotEmpty) {
         final availableHeight = config.contentHeight - currentY;
-        final currentMaxWidth = isFirstLineOfBlock
-            ? config.contentWidth - config.firstLineIndent
-            : config.contentWidth;
+
+        // ═══════════════════════════════════════════════════════
+        // СПЕЦИАЛЬНЫЙ СЛУЧАЙ: первая строка параграфа с отступом
+        // Верстается отдельно на узкой ширине, остальные — на полной
+        // ═══════════════════════════════════════════════════════
+        if (isFirstLineOfBlock && config.firstLineIndent > 0) {
+          final narrowWidth = config.contentWidth - config.firstLineIndent;
+
+          tp.text = TextSpan(text: remainingText, style: config.textStyle);
+          tp.layout(maxWidth: narrowWidth);
+          final narrowMetrics = tp.computeLineMetrics();
+
+          if (narrowMetrics.isEmpty) break;
+
+          final firstMetric = narrowMetrics[0];
+
+          // Не влезает по высоте — переносим параграф на новую страницу
+          if (currentY + firstMetric.height > config.contentHeight) {
+            if (currentLines.isEmpty) break; // защита от беск. цикла
+            pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
+            currentLines = [];
+            currentY = 0.0;
+            pageStartBlockIndex = i;
+            continue;
+          }
+
+          // Извлекаем только первую строку
+          final firstBoundary = tp.getLineBoundary(
+            tp.getPositionForOffset(Offset(0, firstMetric.baseline)),
+          );
+          final endOff = firstBoundary.end;
+
+          String lineText = remainingText
+              .substring(0, endOff)
+              .trimRight()
+              .replaceAll('\u00AD', '');
+
+          final isEndOfParagraph = endOff >= remainingText.length;
+
+          TextAlign textAlign;
+          if (isEndOfParagraph) {
+            final wordCount = lineText
+                .trim()
+                .split(RegExp(r'\s+'))
+                .where((w) => w.isNotEmpty)
+                .length;
+            textAlign = wordCount >= 6 ? TextAlign.justify : TextAlign.left;
+          } else {
+            textAlign = TextAlign.justify;
+          }
+
+          currentLines.add(RenderedLine(
+            text: lineText,
+            style: config.textStyle,
+            offsetX: config.firstLineIndent,
+            offsetY: currentY,
+            height: firstMetric.height,
+            textAlign: textAlign,
+            lineWidth: narrowWidth,
+          ));
+          currentY += firstMetric.height;
+
+          // Сдвигаем текст, дальше — обычная обработка на полной ширине
+          remainingText = remainingText.substring(endOff).trimLeft();
+          isFirstLineOfBlock = false;
+          continue;
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // ОБЫЧНАЯ ОБРАБОТКА (полная ширина)
+        // ═══════════════════════════════════════════════════════
+        final currentMaxWidth = config.contentWidth;
 
         tp.text = TextSpan(text: remainingText, style: config.textStyle);
         tp.layout(maxWidth: currentMaxWidth);
@@ -190,7 +259,6 @@ class TextPaginator {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
           currentLines = [];
           currentY = 0.0;
-          // ✅ Новая страница начинается с этого параграфа
           pageStartBlockIndex = i;
           continue;
         }
@@ -211,10 +279,13 @@ class TextPaginator {
           }
 
           String lineText =
-              remainingText.substring(startOff, endOff).trimRight();
+          remainingText.substring(startOff, endOff).trimRight();
+          lineText = lineText.replaceAll('\u00AD', '');
 
           final isLastOnPage = (m == linesOnThisPage - 1);
           final isEndOfParagraph = (endOff >= remainingText.length);
+
+          bool wasShortened = false;
 
           if (isLastOnPage &&
               !isEndOfParagraph &&
@@ -224,21 +295,17 @@ class TextPaginator {
               final lastSpace = lineText.lastIndexOf(' ');
               if (lastSpace > 0) {
                 endOff = startOff + lastSpace;
-                lineText =
-                    remainingText.substring(startOff, endOff).trimRight();
-              } else if (config.hyphenator != null && lineText.length > 3) {
-                final hp = config.hyphenator!.hyphenate(lineText);
-                if (hp != null && hp > 1 && hp < lineText.length - 1) {
-                  lineText = lineText.substring(0, hp) + '-';
-                  endOff = startOff + hp;
-                }
+                lineText = remainingText
+                    .substring(startOff, endOff)
+                    .trimRight()
+                    .replaceAll('\u00AD', '');
+                wasShortened = true;
               }
             }
           }
 
           consumedEnd = endOff;
 
-          final indentX = isFirstLineOfBlock ? config.firstLineIndent : 0.0;
           final actualHeight = metric.height;
 
           final bool isRealLastLine;
@@ -252,13 +319,15 @@ class TextPaginator {
           }
 
           TextAlign textAlign;
-          if (isRealLastLine) {
+          if (wasShortened) {
+            textAlign = TextAlign.left;
+          } else if (isRealLastLine) {
             final wordCount = lineText
                 .trim()
                 .split(RegExp(r'\s+'))
                 .where((String w) => w.isNotEmpty)
                 .length;
-            textAlign = wordCount >= 4 ? TextAlign.justify : TextAlign.left;
+            textAlign = wordCount >= 6 ? TextAlign.justify : TextAlign.left;
           } else {
             textAlign = TextAlign.justify;
           }
@@ -266,14 +335,13 @@ class TextPaginator {
           currentLines.add(RenderedLine(
             text: lineText,
             style: config.textStyle,
-            offsetX: indentX,
+            offsetX: 0,
             offsetY: currentY,
             height: actualHeight,
             textAlign: textAlign,
             lineWidth: currentMaxWidth,
           ));
           currentY += actualHeight;
-          isFirstLineOfBlock = false;
         }
 
         if (consumedEnd <= 0) {
@@ -286,10 +354,11 @@ class TextPaginator {
           pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
           currentLines = [];
           currentY = 0.0;
-          // ✅ Следующая страница продолжит тот же параграф
-          // pageStartBlockIndex остаётся = i
         }
       }
+
+      // Параграф полностью обработан — следующая страница со следующего блока
+      pageStartBlockIndex = i + 1;
     }
 
     if (currentLines.isNotEmpty) {
@@ -299,12 +368,48 @@ class TextPaginator {
     return pages;
   }
 
+  /// Вставляет \u00AD между слогами, где можно перенести.
+  /// Пунктуация в конце слова отделяется и не разрывается.
+  static String _insertSoftHyphens(String text, Hyphenator h) {
+    final buf = StringBuffer();
+    final parts = text.split(' ');
+    for (var i = 0; i < parts.length; i++) {
+      final word = parts[i];
+      if (word.isEmpty) {
+        buf.write(' ');
+        continue;
+      }
+
+      final m = RegExp(r'^(.+?)([.,!?;:…»]*)$').firstMatch(word);
+      final core = m?.group(1) ?? word;
+      final punct = m?.group(2) ?? '';
+
+      final breaks = h.breakPositions(core);
+      if (breaks.isEmpty) {
+        buf.write(word);
+      } else {
+        var last = 0;
+        for (final pos in breaks) {
+          if (pos > last && pos < core.length) {
+            buf.write(core.substring(last, pos));
+            buf.write('\u00AD');
+            last = pos;
+          }
+        }
+        buf.write(core.substring(last));
+        buf.write(punct);
+      }
+      if (i < parts.length - 1) buf.write(' ');
+    }
+    return buf.toString();
+  }
+
   PageLayout _createPage(
-    List<RenderedLine> lines,
-    List<Chapter> chapters,
-    int chapterIdx,
-    int blockIndex,
-  ) {
+      List<RenderedLine> lines,
+      List<Chapter> chapters,
+      int chapterIdx,
+      int blockIndex,
+      ) {
     return PageLayout(
       lines: lines.toList(),
       startBlockIndex: blockIndex,
