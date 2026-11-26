@@ -24,9 +24,6 @@ class PaginatorConfig {
   });
 }
 
-/// Контракт для движка переносов.
-/// Возвращает список индексов, где можно разорвать слово.
-/// Пример: "библиотека" → [2, 5, 8] → би-блио-те-ка
 abstract class Hyphenator {
   List<int> breakPositions(String word);
 }
@@ -35,31 +32,62 @@ class TextPaginator {
   Future<List<PageLayout>> paginate(
       List<BookBlock> blocks,
       List<Chapter> chapters,
-      PaginatorConfig config,
-      ) async {
+      PaginatorConfig config, {
+        void Function(List<PageLayout> newPages)? onProgress,
+      }) async {
     final sw = Stopwatch()..start();
     print('⏱️ Начало пагинации: ${blocks.length} блоков');
-    final result = _paginateImpl(blocks, chapters, config);
+    final result = await _paginateImpl(
+      blocks, chapters, config,
+      onProgress: onProgress,
+    );
     print('⏱️ Пагинация завершена за ${sw.elapsedMilliseconds} ms, страниц: ${result.length}');
     return result;
   }
 
-  List<PageLayout> _paginateImpl(
+  Future<List<PageLayout>> _paginateImpl(
       List<BookBlock> blocks,
       List<Chapter> chapters,
-      PaginatorConfig config,
-      ) {
+      PaginatorConfig config, {
+        void Function(List<PageLayout> newPages)? onProgress,
+      }) async {
     final pages = <PageLayout>[];
     var currentLines = <RenderedLine>[];
     double currentY = 0.0;
     int currentChapterIdx = 0;
     int pageStartBlockIndex = 0;
 
+    // таймеры
+    final swHyphen = Stopwatch();
+    final swLayout = Stopwatch();
+    int hyphenCalls = 0;
+    int layoutCalls = 0;
+
+    // yield — каждые 50 ms работы, пауза 16 ms (1 кадр)
+    final swYield = Stopwatch()..start();
+    // flush — раз в 500 ms отдаём накопленные страницы через onProgress
+    final swFlush = Stopwatch()..start();
+    int lastReported = 0;
+
     final double normalLineHeight =
         config.textStyle.fontSize! * (config.textStyle.height ?? 1.0);
     final tp = TextPainter(textDirection: TextDirection.ltr);
 
     for (int i = 0; i < blocks.length; i++) {
+      // ─── yield + периодический flush ───
+      if (swYield.elapsedMilliseconds > 50) {
+        await Future.delayed(const Duration(milliseconds: 16));
+        swYield.reset();
+
+        if (swFlush.elapsedMilliseconds > 500) {
+          if (onProgress != null && pages.length > lastReported) {
+            onProgress(pages.sublist(lastReported));
+            lastReported = pages.length;
+          }
+          swFlush.reset();
+        }
+      }
+
       final block = blocks[i];
 
       while (currentChapterIdx < chapters.length - 1 &&
@@ -158,33 +186,34 @@ class TextPaginator {
       }
 
       // --- ПАРАГРАФ ---
-      // Пре-процессинг: вставляем \u00AD в местах возможных переносов
+      swHyphen.start();
       String remainingText = config.hyphenator != null
           ? _insertSoftHyphens(block.text, config.hyphenator!)
           : block.text;
+      swHyphen.stop();
+      hyphenCalls++;
+
       bool isFirstLineOfBlock = true;
 
       while (remainingText.isNotEmpty) {
         final availableHeight = config.contentHeight - currentY;
 
-        // ═══════════════════════════════════════════════════════
-        // СПЕЦИАЛЬНЫЙ СЛУЧАЙ: первая строка параграфа с отступом
-        // Верстается отдельно на узкой ширине, остальные — на полной
-        // ═══════════════════════════════════════════════════════
         if (isFirstLineOfBlock && config.firstLineIndent > 0) {
           final narrowWidth = config.contentWidth - config.firstLineIndent;
 
+          swLayout.start();
           tp.text = TextSpan(text: remainingText, style: config.textStyle);
           tp.layout(maxWidth: narrowWidth);
           final narrowMetrics = tp.computeLineMetrics();
+          swLayout.stop();
+          layoutCalls++;
 
           if (narrowMetrics.isEmpty) break;
 
           final firstMetric = narrowMetrics[0];
 
-          // Не влезает по высоте — переносим параграф на новую страницу
           if (currentY + firstMetric.height > config.contentHeight) {
-            if (currentLines.isEmpty) break; // защита от беск. цикла
+            if (currentLines.isEmpty) break;
             pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
             currentLines = [];
             currentY = 0.0;
@@ -192,7 +221,6 @@ class TextPaginator {
             continue;
           }
 
-          // Извлекаем только первую строку
           final firstBoundary = tp.getLineBoundary(
             tp.getPositionForOffset(Offset(0, firstMetric.baseline)),
           );
@@ -228,21 +256,20 @@ class TextPaginator {
           ));
           currentY += firstMetric.height;
 
-          // Сдвигаем текст, дальше — обычная обработка на полной ширине
           remainingText = remainingText.substring(endOff).trimLeft();
           isFirstLineOfBlock = false;
           continue;
         }
 
-        // ═══════════════════════════════════════════════════════
-        // ОБЫЧНАЯ ОБРАБОТКА (полная ширина)
-        // ═══════════════════════════════════════════════════════
         final currentMaxWidth = config.contentWidth;
 
+        swLayout.start();
         tp.text = TextSpan(text: remainingText, style: config.textStyle);
         tp.layout(maxWidth: currentMaxWidth);
-
         final metrics = tp.computeLineMetrics();
+        swLayout.stop();
+        layoutCalls++;
+
         if (metrics.isEmpty) break;
 
         double pageAccumulatedHeight = 0;
@@ -357,7 +384,6 @@ class TextPaginator {
         }
       }
 
-      // Параграф полностью обработан — следующая страница со следующего блока
       pageStartBlockIndex = i + 1;
     }
 
@@ -365,11 +391,19 @@ class TextPaginator {
       pages.add(_createPage(currentLines, chapters, currentChapterIdx, pageStartBlockIndex));
     }
 
+    // финальный flush
+    if (onProgress != null && pages.length > lastReported) {
+      onProgress(pages.sublist(lastReported));
+      lastReported = pages.length;
+    }
+
+    print('🔬 Hyphenation: ${swHyphen.elapsedMilliseconds} ms ($hyphenCalls вызовов)');
+    print('🔬 Layout: ${swLayout.elapsedMilliseconds} ms ($layoutCalls вызовов)');
+    print('🔬 Среднее на layout: ${(swLayout.elapsedMilliseconds / layoutCalls).toStringAsFixed(2)} ms');
+
     return pages;
   }
 
-  /// Вставляет \u00AD между слогами, где можно перенести.
-  /// Пунктуация в конце слова отделяется и не разрывается.
   static String _insertSoftHyphens(String text, Hyphenator h) {
     final buf = StringBuffer();
     final parts = text.split(' ');
@@ -380,9 +414,18 @@ class TextPaginator {
         continue;
       }
 
-      final m = RegExp(r'^(.+?)([.,!?;:…»]*)$').firstMatch(word);
-      final core = m?.group(1) ?? word;
-      final punct = m?.group(2) ?? '';
+      var punctStart = word.length;
+      while (punctStart > 0) {
+        final c = word[punctStart - 1];
+        if (c == '.' || c == ',' || c == '!' || c == '?' || c == ';' ||
+            c == ':' || c == '…' || c == '»') {
+          punctStart--;
+        } else {
+          break;
+        }
+      }
+      final core = word.substring(0, punctStart);
+      final punct = word.substring(punctStart);
 
       final breaks = h.breakPositions(core);
       if (breaks.isEmpty) {

@@ -9,15 +9,31 @@ import 'package:book_reader_app/features/reader/data/parsers/text_paginator.dart
 class RuHyphenator implements Hyphenator {
   final hyph.Hyphenator _impl;
 
+  /// Кэш: слово → позиции разрыва.
+  /// В книге на 6000 параграфов ~587k слов, но уникальных — 30–50k.
+  /// Кэш даёт 5-10x ускорение на повторных словах.
+  final Map<String, List<int>> _cache = {};
+
   RuHyphenator(this._impl);
 
   @override
   List<int> breakPositions(String word) {
-    if (word.length < 5) return const [];  // 2 слева + 1 дефис + 2 справа минимум
+    // Кэш первым — до length check, чтобы "и", "в" тоже кэшировались
+    final cached = _cache[word];
+    if (cached != null) return cached;
+
+    if (word.length < 5) {
+      _cache[word] = const [];
+      return const [];
+    }
+
     try {
-      return _impl.breakOffsets(word);
+      final result = _impl.breakOffsets(word);
+      _cache[word] = result;
+      return result;
     } catch (_) {
-      return const [];  // защита от неожиданных слов
+      _cache[word] = const [];
+      return const [];
     }
   }
 }

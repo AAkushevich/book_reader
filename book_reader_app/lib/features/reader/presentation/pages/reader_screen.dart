@@ -152,7 +152,25 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
       data: (state) {
         if (!state.isReady) {
           return Center(
-            child: Text('Обработка текста...', style: TextStyle(color: theme.textColor)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: theme.accentColor),
+                const SizedBox(height: 16),
+                Text(
+                  'Подготовка страниц...',
+                  style: TextStyle(color: theme.textColor),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${state.pages.length} готово',
+                  style: TextStyle(
+                    color: theme.textColor.withOpacity(0.5),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           );
         }
 
@@ -174,19 +192,36 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> with WidgetsBinding
 
             return Stack(
               children: [
-                PageView.builder(
-                  controller: _pageController,
-                  itemCount: state.pages.length,
-                  onPageChanged: (index) => ref.read(readerProvider.notifier).goToPage(index),
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
-                      child: CustomPaint(
-                        painter: PagePainter(state.pages[index], theme.textColor),
-                        size: Size.infinite,
-                      ),
-                    );
+                NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // Пока идёт скролл — не даём state обновляться,
+                    // иначе PageView перестраивается и сбивает анимацию.
+                    if (notification is ScrollStartNotification) {
+                      ref.read(readerProvider.notifier).setUserScrolling(true);
+                    } else if (notification is ScrollEndNotification) {
+                      ref.read(readerProvider.notifier).setUserScrolling(false);
+                    }
+                    return false;
                   },
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: state.pages.length,
+                    onPageChanged: (index) =>
+                        ref.read(readerProvider.notifier).goToPage(index),
+                    itemBuilder: (context, index) {
+                      // RepaintBoundary изолирует перерисовку одной страницы
+                      // от остальных — не дёргает соседние при обновлении state.
+                      return RepaintBoundary(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
+                          child: CustomPaint(
+                            painter: PagePainter(state.pages[index], theme.textColor),
+                            size: Size.infinite,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
                 // Тройная зона тапов
                 Positioned.fill(

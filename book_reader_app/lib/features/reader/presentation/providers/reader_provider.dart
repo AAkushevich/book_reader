@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_reader_app/core/database/app_database.dart';
 import 'package:book_reader_app/features/reader/data/parsers/book_text_extractor.dart';
+import 'package:book_reader_app/features/reader/data/parsers/hyphenator_provider.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_block.dart';
 import 'package:book_reader_app/features/reader/domain/entities/book_content.dart';
 import 'package:book_reader_app/features/reader/domain/entities/page_layout.dart';
@@ -10,16 +11,15 @@ import 'package:book_reader_app/features/reader/domain/entities/reading_progress
 import 'package:book_reader_app/features/reader/domain/repositories/reader_repository.dart';
 import 'package:book_reader_app/features/reader/data/repositories/reader_repository_impl.dart';
 import 'package:book_reader_app/features/reader/data/parsers/text_paginator.dart';
-import 'package:book_reader_app/features/reader/data/parsers/hyphenator_provider.dart';
-// ---------- Базовые провайдеры ----------
+
 final appDatabaseProvider = Provider<AppDatabase>((ref) => throw UnimplementedError());
 
 final readerRepositoryProvider = Provider<ReaderRepository>(
-  (ref) => ReaderRepositoryImpl(ref.watch(appDatabaseProvider)),
+      (ref) => ReaderRepositoryImpl(ref.watch(appDatabaseProvider)),
 );
 
 final bookTextExtractorProvider = Provider<BookTextExtractor>(
-  (ref) => BookTextExtractor(),
+      (ref) => BookTextExtractor(),
 );
 
 class ContentSizeNotifier extends Notifier<Size> {
@@ -32,7 +32,6 @@ final contentSizeProvider = NotifierProvider<ContentSizeNotifier, Size>(
   ContentSizeNotifier.new,
 );
 
-// ---------- Состояние ридера ----------
 class ReaderState {
   final List<BookBlock> blocks;
   final List<PageLayout> pages;
@@ -81,7 +80,6 @@ class ReaderState {
   }
 }
 
-// ---------- Нотификатор ----------
 final readerProvider = AsyncNotifierProvider<ReaderNotifier, ReaderState>(
   ReaderNotifier.new,
 );
@@ -90,6 +88,10 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
   late final ReaderRepository _repo;
   late final BookTextExtractor _extractor;
 
+  // Scroll-aware flush
+  bool _userScrolling = false;
+  final List<PageLayout> _pendingPages = [];
+
   @override
   Future<ReaderState> build() async {
     _repo = ref.watch(readerRepositoryProvider);
@@ -97,18 +99,39 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     return const ReaderState();
   }
 
+  void setUserScrolling(bool value) {
+    _userScrolling = value;
+    if (!value && _pendingPages.isNotEmpty) {
+      // Пользователь закончил скроллить — флашим всё накопленное
+      final current = state.value;
+      if (current != null) {
+        state = AsyncValue.data(current.copyWith(
+          pages: [...current.pages, ..._pendingPages],
+          isReady: true,
+        ));
+        _pendingPages.clear();
+      }
+    }
+  }
+
   Future<void> openBook(
-    String filePath,
-    String bookTitle,
-    String bookAuthor,
-    Size screenSize,
-    TextScaler textScaler,
-  ) async {
+      String filePath,
+      String bookTitle,
+      String bookAuthor,
+      Size screenSize,
+      TextScaler textScaler,
+      ) async {
     final stopwatch = Stopwatch()..start();
-    String finalTitle = bookTitle.isNotEmpty ? bookTitle : filePath.split('/').last.split('.').first;
+    String finalTitle =
+    bookTitle.isNotEmpty ? bookTitle : filePath.split('/').last.split('.').first;
     String finalAuthor = bookAuthor.isNotEmpty ? bookAuthor : 'Автор неизвестен';
 
-    state = await AsyncValue.guard(() async {
+    // сброс буферов при новой книге
+    _userScrolling = false;
+    _pendingPages.clear();
+
+    state = const AsyncValue.loading();
+    try {
       final t0 = stopwatch.elapsedMilliseconds;
       final existingProgress = await _repo.loadProgress(filePath);
       final progress = existingProgress ?? ReadingProgress.initial(filePath);
@@ -119,34 +142,85 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
       print('⏱ Парсинг книги: ${stopwatch.elapsedMilliseconds - t1} ms, блоков: ${bookContent.blocks.length}');
 
       if (bookContent.blocks.isEmpty) {
-        throw FormatException('Файл не содержит читаемого текста');
+        state = AsyncValue.error(
+          FormatException('Файл не содержит читаемого текста'),
+          StackTrace.current,
+        );
+        return;
       }
 
+      state = AsyncValue.data(ReaderState(
+        blocks: bookContent.blocks,
+        chapters: bookContent.chapters,
+        progress: progress,
+        isReady: false,
+        bookTitle: finalTitle,
+        bookAuthor: finalAuthor,
+      ));
+
       final t2 = stopwatch.elapsedMilliseconds;
+      final currentProgress = state.value?.progress ?? progress;
+
       final resultState = await _recalculatePages(
         bookContent.blocks,
         bookContent.chapters,
-        progress,
+        currentProgress,
         screenSize,
         bookTitle: finalTitle,
         bookAuthor: finalAuthor,
+        onProgress: (newPages) {
+          final current = state.value;
+          if (current == null) return;
+          if (current.progress?.bookId != currentProgress.bookId) return;
+          if (newPages.isEmpty) return;
+
+          // Пока пользователь листает — копим, не дёргаем UI
+          if (_userScrolling) {
+            _pendingPages.addAll(newPages);
+            return;
+          }
+
+          // Если пользователь далеко от края готового — тоже копим
+          // (первые 50 ещё грузятся, ему хватает)
+          final nearEdge = current.currentPageIndex + 20 >= current.pages.length;
+          if (!nearEdge && current.pages.isNotEmpty) {
+            _pendingPages.addAll(newPages);
+            return;
+          }
+
+          // Пользователь близко к краю — флашим чтобы не «застрял»
+          final newTotal = current.pages.length + _pendingPages.length + newPages.length;
+          if (current.pages.length ~/ 100 != newTotal ~/ 100) {
+            print('📄 onProgress: всего $newTotal страниц');
+          }
+
+          state = AsyncValue.data(current.copyWith(
+            pages: [...current.pages, ..._pendingPages, ...newPages],
+            isReady: true,
+          ));
+          _pendingPages.clear();
+        },
       );
+
       print('⏱ Пагинация: ${stopwatch.elapsedMilliseconds - t2} ms, страниц: ${resultState.pages.length}');
       print('⏱ ОБЩЕЕ ВРЕМЯ открытия книги: ${stopwatch.elapsedMilliseconds} ms');
-      return resultState;
-    });
+
+      state = AsyncValue.data(resultState);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
+    }
   }
 
   Future<ReaderState> _recalculatePages(
-    List<BookBlock> blocks,
-    List<Chapter> chapters,
-    ReadingProgress progress,
-    Size screenSize, {
-    String bookTitle = 'Неизвестная книга',
-    String bookAuthor = 'Автор неизвестен',
-  }) async {
+      List<BookBlock> blocks,
+      List<Chapter> chapters,
+      ReadingProgress progress,
+      Size screenSize, {
+        String bookTitle = 'Неизвестная книга',
+        String bookAuthor = 'Автор неизвестен',
+        void Function(List<PageLayout>)? onProgress,
+      }) async {
     final contentWidth = screenSize.width - 40;
-    // ✅ Увеличен отступ снизу: 40 top + 20 bottom + 30 для индикатора страниц
     final contentHeight = screenSize.height - 60 - 15;
 
     final theme = ReaderThemeData.getByIndex(progress.themeIndex);
@@ -182,7 +256,10 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     );
 
     final paginator = TextPaginator();
-    final pages = await paginator.paginate(blocks, chapters, config);
+    final pages = await paginator.paginate(
+      blocks, chapters, config,
+      onProgress: onProgress,
+    );
     final safeIndex = progress.currentPageIndex.clamp(0, pages.length - 1);
 
     print('📄 Пересчёт страниц: themeIndex=${progress.themeIndex}, fontSize=${progress.fontSize}, pages=${pages.length}');
@@ -198,12 +275,17 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     );
   }
 
-  // ---------- Методы управления ----------
   Future<void> goToPage(int index) async {
     final current = state.value;
     if (current == null || index < 0 || index >= current.pages.length) return;
+
     await _repo.updatePage(current.progress!.bookId, index);
-    state = AsyncValue.data(current.copyWith(currentPageIndex: index));
+
+    final latest = state.value;
+    if (latest == null) return;
+    if (latest.progress?.bookId != current.progress?.bookId) return;
+
+    state = AsyncValue.data(latest.copyWith(currentPageIndex: index));
   }
 
   Future<void> changeFontSize(double newFontSize, Size screenSize) async {
@@ -245,13 +327,15 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     });
   }
 
-  // ✅ Тема меняет только цвет текста — пересчёт пагинации НЕ нужен
   Future<void> changeTheme(int themeIndex, Size screenSize) async {
     final current = state.value;
     if (current == null) return;
     final updatedProgress = current.progress!.updateSettings(themeIndex: themeIndex);
     await _repo.saveProgress(updatedProgress);
-    state = AsyncValue.data(current.copyWith(progress: updatedProgress));
+    final latest = state.value;
+    if (latest == null) return;
+    if (latest.progress?.bookId != current.progress?.bookId) return;
+    state = AsyncValue.data(latest.copyWith(progress: updatedProgress));
   }
 
   Future<void> changeFont(int fontIndex, Size screenSize) async {
@@ -271,13 +355,16 @@ class ReaderNotifier extends AsyncNotifier<ReaderState> {
     });
   }
 
-  // ✅ Тема меняет только цвет текста — пересчёт пагинации НЕ нужен
   Future<void> toggleTheme() async {
     final current = state.value;
     if (current == null) return;
-    final updatedProgress = current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
+    final updatedProgress =
+    current.progress!.updateSettings(isDarkMode: !current.progress!.isDarkMode);
     await _repo.saveProgress(updatedProgress);
-    state = AsyncValue.data(current.copyWith(progress: updatedProgress));
+    final latest = state.value;
+    if (latest == null) return;
+    if (latest.progress?.bookId != current.progress?.bookId) return;
+    state = AsyncValue.data(latest.copyWith(progress: updatedProgress));
   }
 
   void toggleProgressFormat() {
